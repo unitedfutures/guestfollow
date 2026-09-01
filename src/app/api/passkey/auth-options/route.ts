@@ -44,11 +44,17 @@ export async function POST(request: Request) {
     })
 
     // チャレンジを保存
-    await supabase.from('passkey_challenges').insert({
+    const { error: insertError } = await supabase.from('passkey_challenges').insert({
       challenge: options.challenge,
       type: 'authentication',
       facility_id,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     })
+
+    if (insertError) {
+      console.error('passkey_challenges insert error (auth):', insertError)
+      return NextResponse.json({ error: `チャレンジの保存に失敗しました: ${insertError.message}` }, { status: 500 })
+    }
 
     return NextResponse.json(options)
   } catch (e) {

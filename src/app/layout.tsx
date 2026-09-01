@@ -13,8 +13,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "CheckInn | セルフチェックインシステム",
-  description: "無人宿泊施設向けセルフチェックインシステム。Face ID・指紋によるパスキー認証で、旅館業法に対応した安全なチェックインを実現します。",
+  title: "GuestFollow | 宿泊施設向け 予約・ゲスト管理クラウド",
+  description: "Beds24・Airhostから予約を自動取込。宿泊者名簿・セルフチェックイン・アンケート・ゲストメッセージに加え、売上レポート・宿泊実績報告（民泊法第14条）・宿泊税計算まで一元化する宿泊施設向けクラウドサービス。旅館業法改正に標準対応。",
   icons: {
     icon: '/icon.svg',
     shortcut: '/icon.svg',

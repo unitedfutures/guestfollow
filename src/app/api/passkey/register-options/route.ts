@@ -30,7 +30,7 @@ export async function POST(request: Request) {
     const options = await generateRegistrationOptions({
       rpName,
       rpID: getRpID(),
-      userID: guest_record_id,
+      userID: new TextEncoder().encode(guest_record_id),
       userName: guestRecord.full_name,
       attestationType: 'none',
       authenticatorSelection: {
@@ -40,11 +40,20 @@ export async function POST(request: Request) {
     })
 
     // チャレンジを passkey_challenges テーブルに保存
-    await supabase.from('passkey_challenges').insert({
+    const { error: insertError } = await supabase.from('passkey_challenges').insert({
       challenge: options.challenge,
       type: 'registration',
       guest_record_id,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     })
+
+    if (insertError) {
+      console.error('passkey_challenges insert error:', insertError)
+      return NextResponse.json(
+        { error: `チャレンジの保存に失敗しました: ${insertError.message}` },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json(options)
   } catch (e) {

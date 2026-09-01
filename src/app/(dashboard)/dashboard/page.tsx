@@ -1,93 +1,57 @@
 import { createClient } from '@/lib/supabase/server'
-import { Card, CardContent } from '@/components/ui/card'
-import { Building2, CalendarDays, Users, CheckCircle, Settings, ArrowRight } from 'lucide-react'
-import Link from 'next/link'
+import { BookingDashboard } from './booking-dashboard'
+import { getAccountAccess } from '@/lib/auth/roles'
 
 export default async function DashboardPage() {
+  const { isCleanerOnly } = await getAccountAccess()
   const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
 
   const [
-    { count: facilityCount },
-    { count: bookingCount },
-    { count: checkedInCount },
-    { count: guestCount },
+    { data: rawBookings },
+    { data: facilities },
+    { data: surveyResponses },
+    { data: cleaningStaff },
   ] = await Promise.all([
-    supabase.from('facilities').select('*', { count: 'exact', head: true }),
-    supabase.from('bookings').select('*', { count: 'exact', head: true }),
-    supabase.from('bookings').select('*', { count: 'exact', head: true }).eq('status', 'checked_in'),
-    supabase.from('guest_records').select('*', { count: 'exact', head: true }),
+    supabase
+      .from('bookings')
+      .select(`
+        id, guest_name, guest_email, checkin_date, checkout_date,
+        num_guests, status, ota_source, ota_channel, ota_status, cleaning_staff_id,
+        created_at, facility_id, pre_checkin_token,
+        facilities(id, name),
+        guest_records(
+          id, full_name, email, phone, address, num_guests,
+          is_foreign, nationality, checkin_completed_at, terms_agreed_at
+        )
+      `)
+      .order('checkin_date', { ascending: false }),
+    supabase
+      .from('facilities')
+      .select('id, name')
+      .order('name'),
+    supabase
+      .from('survey_responses')
+      .select('id, facility_id, stay_checkin'),
+    supabase
+      .from('cleaning_staff')
+      .select('id, name')
+      .eq('active', true)
+      .order('created_at', { ascending: true }),
   ])
 
-  const stats = [
-    { label: '施設数', value: facilityCount ?? 0, icon: Building2, color: 'text-navy-500 bg-navy-50' },
-    { label: '予約数', value: bookingCount ?? 0, icon: CalendarDays, color: 'text-blue-600 bg-blue-50' },
-    { label: 'チェックイン済み', value: checkedInCount ?? 0, icon: CheckCircle, color: 'text-green-600 bg-green-50' },
-    { label: '宿泊者名簿（累計）', value: guestCount ?? 0, icon: Users, color: 'text-orange-600 bg-orange-50' },
-  ]
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const bookings = (rawBookings ?? []) as any[]
+
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
   return (
-    <div className="p-8">
-      <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">ダッシュボード</h2>
-        <p className="text-gray-500 text-sm mt-1">ようこそ、{user?.email} さん</p>
-      </div>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
-        {stats.map(({ label, value, icon: Icon, color }) => (
-          <Card key={label}>
-            <CardContent className="flex items-center gap-4 py-5">
-              <div className={`p-3 rounded-xl ${color} shrink-0`}>
-                <Icon size={22} />
-              </div>
-              <div>
-                <p className="text-xs text-gray-500">{label}</p>
-                <p className="text-2xl font-bold text-gray-900">{value}</p>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* 初期設定 */}
-      <div className="bg-gray-50 border border-gray-200 rounded-xl p-5 mb-4">
-        <div className="flex items-center gap-2 mb-3">
-          <Settings size={15} className="text-gray-500" />
-          <h3 className="font-semibold text-gray-700 text-sm">初期設定（最初に1度だけ）</h3>
-        </div>
-        <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
-          <Link href="/dashboard/facilities" className="bg-white border border-gray-300 rounded-lg px-3 py-1 hover:border-navy-400 hover:text-navy-500 transition-colors">
-            施設を登録してQRコードを発行
-          </Link>
-          <span className="text-gray-300">／</span>
-          <Link href="/dashboard/settings" className="bg-white border border-gray-300 rounded-lg px-3 py-1 hover:border-navy-400 hover:text-navy-500 transition-colors">
-            Beds24 / Airhost 連携を設定（予約照合用・任意）
-          </Link>
-        </div>
-      </div>
-
-      {/* 通常フロー */}
-      <div className="bg-navy-50 border border-navy-100 rounded-xl p-5">
-        <h3 className="font-semibold text-navy-700 mb-3">通常の運用フロー</h3>
-        <div className="flex items-center gap-2 text-sm text-navy-600 flex-wrap">
-          <div className="bg-white border border-navy-200 rounded-lg px-3 py-1.5">
-            <span className="text-navy-300 text-xs mr-1">①</span>事前登録URLをゲストに送付
-            <p className="text-xs text-gray-400 mt-0.5">自動送信メールでのご案内を推奨</p>
-          </div>
-          <ArrowRight size={14} className="text-navy-300 shrink-0" />
-          <div className="bg-white border border-navy-200 rounded-lg px-3 py-1.5">
-            <span className="text-navy-300 text-xs mr-1">②</span>ゲストが情報・顔写真・パスキーを登録
-          </div>
-          <ArrowRight size={14} className="text-navy-300 shrink-0" />
-          <div className="bg-white border border-navy-200 rounded-lg px-3 py-1.5">
-            <span className="text-navy-300 text-xs mr-1">③</span>当日：QRスキャン → Face ID認証
-          </div>
-          <ArrowRight size={14} className="text-navy-300 shrink-0" />
-          <div className="bg-white border border-indigo-200 rounded-lg px-3 py-1.5 font-medium text-green-700 border-green-200 bg-green-50">
-            暗証番号を表示して入室
-          </div>
-        </div>
-      </div>
-    </div>
+    <BookingDashboard
+      bookings={bookings}
+      facilities={facilities ?? []}
+      surveyResponses={surveyResponses ?? []}
+      cleaningStaff={cleaningStaff ?? []}
+      appUrl={appUrl}
+      cleanerMode={isCleanerOnly}
+    />
   )
 }

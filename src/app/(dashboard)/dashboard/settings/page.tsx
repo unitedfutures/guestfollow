@@ -1,16 +1,48 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Lock, Building2 } from 'lucide-react'
+import { redirect } from 'next/navigation'
 import { SettingsForm } from './settings-form'
+import { OtaAccountsManager } from './ota-accounts-manager'
+import { CleaningStaffManager } from './cleaning-staff-manager'
+import { getAccountAccess } from '@/lib/auth/roles'
 
 export default async function SettingsPage() {
+  const { isCleanerOnly } = await getAccountAccess()
+  if (isCleanerOnly) redirect('/dashboard')
+
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('company_name, beds24_api_key, airhost_api_key')
-    .eq('id', user!.id)
-    .single()
+
+  const [{ data: profile }, { data: otaAccounts }, { data: cleaningStaff }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('company_name')
+      .eq('id', user!.id)
+      .single(),
+    supabase
+      .from('ota_accounts')
+      .select('id, provider, label, created_at, api_key, refresh_token')
+      .eq('user_id', user!.id)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('cleaning_staff')
+      .select('id, name, active, created_at')
+      .eq('user_id', user!.id)
+      .order('created_at', { ascending: true }),
+  ])
+
+  // 既存ユーザー救済：profiles.company_name が空でも、サインアップ時に入力した
+  // 会社名（auth メタデータ）が残っていれば profiles に補完して表示する。
+  let companyName = profile?.company_name ?? ''
+  const metaCompanyName = (user?.user_metadata?.company_name as string | undefined)?.trim()
+  if (!companyName && metaCompanyName) {
+    await supabase
+      .from('profiles')
+      .update({ company_name: metaCompanyName, updated_at: new Date().toISOString() })
+      .eq('id', user!.id)
+    companyName = metaCompanyName
+  }
 
   return (
     <div className="p-8 max-w-2xl">
@@ -21,11 +53,22 @@ export default async function SettingsPage() {
 
       <div className="space-y-6">
         <SettingsForm
-          defaultCompanyName={profile?.company_name ?? ''}
-          defaultBeds24ApiKey={profile?.beds24_api_key ?? ''}
-          defaultAirhostApiKey={profile?.airhost_api_key ?? ''}
+          defaultCompanyName={companyName}
           email={user?.email ?? ''}
         />
+
+        <OtaAccountsManager
+          initialAccounts={(otaAccounts ?? []).map(a => ({
+            id: a.id,
+            provider: a.provider,
+            label: a.label,
+            created_at: a.created_at,
+            has_longlife: !!a.api_key,
+            has_refresh: !!a.refresh_token,
+          }))}
+        />
+
+        <CleaningStaffManager initialStaff={cleaningStaff ?? []} />
 
         <Card>
           <CardHeader>

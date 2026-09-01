@@ -39,6 +39,33 @@ export interface AirhostBooking {
   check_out: string     // チェックアウト日 (YYYY-MM-DD)
   number_of_guests: number
   status: string        // confirmed / cancelled など
+  // 予約元OTA（Airbnb / Booking.com など）。Airhostのレスポンス仕様に応じて複数キーを許容
+  channel?: string
+  platform?: string
+  ota_name?: string
+  ota_type?: string
+  source?: string
+  // 金額（レスポンス仕様に応じて複数キーを許容）
+  price?: number | string
+  total_price?: number | string
+  amount?: number | string
+  total_amount?: number | string
+}
+
+// AirhostレスポンスからOTAチャネル名を推定して取り出す
+export function pickAirhostChannel(b: AirhostBooking): string {
+  return String(b.channel ?? b.platform ?? b.ota_name ?? b.ota_type ?? b.source ?? '')
+}
+
+// Airhostレスポンスから金額を推定して取り出す
+export function pickAirhostPrice(b: AirhostBooking): number {
+  const v = b.price ?? b.total_price ?? b.amount ?? b.total_amount ?? 0
+  return Number(v) || 0
+}
+
+// 'cancelled' 系を判定
+export function pickAirhostOtaStatus(b: AirhostBooking): string {
+  return String(b.status ?? '').toLowerCase().includes('cancel') ? 'cancelled' : 'confirmed'
 }
 
 export async function getAirhostProperties(apiKey: string): Promise<AirhostProperty[]> {

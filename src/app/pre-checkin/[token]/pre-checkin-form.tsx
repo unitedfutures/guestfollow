@@ -5,6 +5,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { CheckCircle, ChevronRight, ChevronLeft, Upload, X, Fingerprint, Camera } from 'lucide-react'
+import { useGuestLang } from '@/lib/i18n/guest-lang'
 
 interface Props {
   token: string
@@ -18,29 +19,13 @@ interface Props {
 type Step = 'basic' | 'passport' | 'terms' | 'passkey' | 'done'
 type Level = 'required' | 'optional' | 'off'
 
-const TERMS_TEXT = `宿泊約款・ハウスルール
-
-【宿泊約款】
-1. チェックイン時間は15:00〜22:00、チェックアウトは10:00です。
-2. 施設内での喫煙は禁止です（屋外指定場所のみ可）。
-3. ペットの同伴はご遠慮ください。
-4. 深夜22:00以降の騒音はご遠慮ください。
-5. ゴミは所定の場所に分別して捨ててください。
-
-【旅館業法に基づく宿泊者名簿について】
-旅館業法第6条に基づき、宿泊者の氏名・住所・連絡先を名簿に記載させていただきます。
-取得した個人情報は宿泊者名簿の作成および法令上の義務を果たす目的のみに使用し、
-法定保存期間（3年間）経過後に適切に削除します。
-
-【免責事項】
-施設内での事故・盗難については施設は責任を負いかねます。
-貴重品の管理はお客様ご自身でお願いします。`
-
 export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, formConfig = {} }: Props) {
+  const { t } = useGuestLang()
   // form_config のヘルパー
   const cfg = (key: string): Level => (formConfig[key] as Level) ?? 'required'
   const show = (key: string) => cfg(key) !== 'off'
   const required = (key: string) => cfg(key) === 'required'
+  const mark = (key: string) => (required(key) ? ' *' : t('optional'))
 
   const [step, setStep] = useState<Step>('basic')
   const [loading, setLoading] = useState(false)
@@ -104,7 +89,7 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
 
     if (!res.ok) {
       const data = await res.json()
-      setError(data.error || 'エラーが発生しました')
+      setError(data.error || t('error_generic'))
       setLoading(false)
       return
     }
@@ -133,15 +118,15 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
       })
       if (!verifyRes.ok) {
         const data = await verifyRes.json()
-        setError(data.error || 'パスキーの登録に失敗しました')
+        setError(data.error || t('passkey_failed'))
         return
       }
       setStep('done')
     } catch (e: unknown) {
       if (e instanceof Error && e.name === 'NotAllowedError') {
-        setError('認証がキャンセルされました。もう一度お試しください。')
+        setError(t('passkey_cancelled'))
       } else {
-        setError('パスキーの登録に失敗しました。WebAuthn対応デバイスか確認してください。')
+        setError(t('passkey_failed'))
       }
     } finally {
       setLoading(false)
@@ -162,12 +147,8 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
     return (
       <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100 text-center">
         <CheckCircle size={52} className="text-green-500 mx-auto mb-4" />
-        <h3 className="text-lg font-bold text-gray-900 mb-2">事前登録が完了しました</h3>
-        <p className="text-gray-500 text-sm leading-relaxed">
-          チェックイン用リンクをメールでお送りしました。<br />
-          当日は施設玄関のQRコードをスキャンし、<br />
-          Face ID または指紋認証でチェックインしてください。
-        </p>
+        <h3 className="text-lg font-bold text-gray-900 mb-2">{t('done_title')}</h3>
+        <p className="text-gray-500 text-sm leading-relaxed">{t('done_desc')}</p>
       </div>
     )
   }
@@ -181,15 +162,12 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
             <Fingerprint size={32} className="text-indigo-500" />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900 mb-2">チェックイン用パスキーの設定</h3>
-            <p className="text-sm text-gray-500 leading-relaxed">
-              施設到着時のチェックインに使用します。<br />
-              Face ID または指紋認証でパスキーを登録してください。
-            </p>
+            <h3 className="font-semibold text-gray-900 mb-2">{t('passkey_title')}</h3>
+            <p className="text-sm text-gray-500 leading-relaxed">{t('passkey_desc')}</p>
           </div>
           {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
           <Button className="w-full" size="lg" loading={loading} onClick={handlePasskeyRegister}>
-            Face ID / 指紋でパスキーを登録
+            {t('passkey_button')}
           </Button>
         </div>
       </div>
@@ -197,7 +175,9 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
   }
 
   // --- ステップインジケーター ---
-  const steps = basic.is_foreign ? ['基本情報', 'パスポート', '規約同意'] : ['基本情報', '規約同意']
+  const steps = basic.is_foreign
+    ? [t('step_basic'), t('step_passport'), t('step_terms')]
+    : [t('step_basic'), t('step_terms')]
   const currentIdx = step === 'basic' ? 0 : step === 'passport' ? 1 : (basic.is_foreign ? 2 : 1)
 
   return (
@@ -220,25 +200,25 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
         {/* ===== Step 1: 基本情報 ===== */}
         {step === 'basic' && (
           <div className="space-y-4">
-            <h3 className="font-semibold text-gray-900 mb-4">基本情報の入力</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">{t('basic_title')}</h3>
 
-            <Input id="full_name" label="お名前（代表者） *" placeholder="山田 太郎"
+            <Input id="full_name" label={`${t('full_name')} *`} placeholder={t('full_name_ph')}
               value={basic.full_name} onChange={e => setB('full_name', e.target.value)} required />
-            <Input id="email" type="email" label="メールアドレス *" placeholder="example@email.com"
+            <Input id="email" type="email" label={`${t('email')} *`} placeholder={t('email_ph')}
               value={basic.email} onChange={e => setB('email', e.target.value)} required />
 
             {show('phone') && (
               <Input id="phone" type="tel"
-                label={`電話番号${required('phone') ? ' *' : '（任意）'}`}
-                placeholder="090-0000-0000"
+                label={`${t('phone')}${mark('phone')}`}
+                placeholder={t('phone_ph')}
                 value={basic.phone} onChange={e => setB('phone', e.target.value)}
                 required={required('phone')} />
             )}
 
             {show('address') && (
               <Input id="address"
-                label={`住所${required('address') ? ' *' : '（任意）'}`}
-                placeholder="東京都〇〇区〇〇1-2-3"
+                label={`${t('address')}${mark('address')}`}
+                placeholder={t('address_ph')}
                 value={basic.address} onChange={e => setB('address', e.target.value)}
                 required={required('address')} />
             )}
@@ -246,12 +226,12 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
             {show('num_guests') && (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  宿泊人数{required('num_guests') ? ' *' : '（任意）'}
+                  {t('num_guests')}{mark('num_guests')}
                 </label>
                 <select
                   className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   value={basic.num_guests} onChange={e => setB('num_guests', parseInt(e.target.value))}>
-                  {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{n}名</option>)}
+                  {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{t('guests_n', { n })}</option>)}
                 </select>
               </div>
             )}
@@ -262,10 +242,10 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   <span className="flex items-center gap-1.5">
                     <Camera size={14} className="text-gray-500" />
-                    顔写真{required('face_photo') ? ' *' : '（任意）'}
+                    {t('face_photo')}{mark('face_photo')}
                   </span>
                 </label>
-                <p className="text-xs text-gray-400 mb-2">本人確認のため、正面からの顔写真をアップロードしてください</p>
+                <p className="text-xs text-gray-400 mb-2">{t('face_photo_hint')}</p>
                 {facePreview ? (
                   <div className="relative">
                     <img src={facePreview} alt="face" className="w-32 h-32 object-cover rounded-xl border border-gray-200" />
@@ -278,8 +258,8 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
                   <button onClick={() => faceInputRef.current?.click()}
                     className="w-full border-2 border-dashed border-gray-300 rounded-xl p-6 text-center hover:border-indigo-400 transition-colors">
                     <Upload size={20} className="text-gray-400 mx-auto mb-1" />
-                    <p className="text-sm text-gray-500">タップして写真を選択</p>
-                    <p className="text-xs text-gray-400 mt-0.5">JPG / PNG</p>
+                    <p className="text-sm text-gray-500">{t('select_photo')}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{t('jpg_png')}</p>
                   </button>
                 )}
                 <input ref={faceInputRef} type="file" accept="image/*" capture="user"
@@ -290,11 +270,11 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
             <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" className="rounded border-gray-300 text-indigo-600"
                 checked={basic.is_foreign} onChange={e => setB('is_foreign', e.target.checked)} />
-              <span className="text-sm text-gray-700">外国人宿泊者を含む（パスポート情報が必要です）</span>
+              <span className="text-sm text-gray-700">{t('is_foreign')}</span>
             </label>
 
             <Button className="w-full" size="lg" disabled={!basicValid()} onClick={nextStep}>
-              次へ <ChevronRight size={16} className="ml-1" />
+              {t('next')} <ChevronRight size={16} className="ml-1" />
             </Button>
           </div>
         )}
@@ -302,13 +282,13 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
         {/* ===== Step 2: パスポート ===== */}
         {step === 'passport' && (
           <div className="space-y-4">
-            <h3 className="font-semibold text-gray-900 mb-4">パスポート情報</h3>
-            <Input id="nationality" label="国籍 *" placeholder="例：American / 中国"
+            <h3 className="font-semibold text-gray-900 mb-4">{t('passport_title')}</h3>
+            <Input id="nationality" label={`${t('nationality')} *`} placeholder={t('passport_nationality_ph')}
               value={passport.nationality} onChange={e => setPassport(p => ({ ...p, nationality: e.target.value }))} required />
-            <Input id="passport_number" label="旅券番号 *" placeholder="例：TK1234567"
+            <Input id="passport_number" label={`${t('passport_number')} *`} placeholder={t('passport_number_ph')}
               value={passport.passport_number} onChange={e => setPassport(p => ({ ...p, passport_number: e.target.value }))} required />
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">旅券画像アップロード *</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">{t('passport_image')} *</label>
               {passportPreview ? (
                 <div className="relative">
                   <img src={passportPreview} alt="passport" className="w-full rounded-xl border border-gray-200 object-cover max-h-48" />
@@ -321,8 +301,8 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
                 <button onClick={() => passportInputRef.current?.click()}
                   className="w-full border-2 border-dashed border-gray-300 rounded-xl p-8 text-center hover:border-indigo-400 transition-colors">
                   <Upload size={24} className="text-gray-400 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">タップして画像を選択</p>
-                  <p className="text-xs text-gray-400 mt-1">JPG / PNG</p>
+                  <p className="text-sm text-gray-500">{t('select_image')}</p>
+                  <p className="text-xs text-gray-400 mt-1">{t('jpg_png')}</p>
                 </button>
               )}
               <input ref={passportInputRef} type="file" accept="image/*" className="hidden"
@@ -330,12 +310,12 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
             </div>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={prevStep}>
-                <ChevronLeft size={16} className="mr-1" /> 戻る
+                <ChevronLeft size={16} className="mr-1" /> {t('back')}
               </Button>
               <Button className="flex-1"
                 disabled={!passport.nationality || !passport.passport_number || !passportFile}
                 onClick={nextStep}>
-                次へ <ChevronRight size={16} className="ml-1" />
+                {t('next')} <ChevronRight size={16} className="ml-1" />
               </Button>
             </div>
           </div>
@@ -344,25 +324,25 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
         {/* ===== Step 3: 規約同意 ===== */}
         {step === 'terms' && (
           <div className="space-y-4">
-            <h3 className="font-semibold text-gray-900 mb-4">宿泊約款・ハウスルールへの同意</h3>
+            <h3 className="font-semibold text-gray-900 mb-4">{t('terms_title')}</h3>
             <div className="bg-gray-50 rounded-xl p-4 h-56 overflow-y-auto text-xs text-gray-600 leading-relaxed whitespace-pre-wrap border border-gray-200">
-              {TERMS_TEXT}
+              {t('terms_text')}
             </div>
             <label className="flex items-start gap-3 cursor-pointer">
               <input type="checkbox" className="mt-0.5 rounded border-gray-300 text-indigo-600"
                 checked={agreed} onChange={e => setAgreed(e.target.checked)} />
               <span className="text-sm text-gray-700">
-                上記の宿泊約款およびハウスルールを読み、内容に同意します。<br />
-                <span className="text-xs text-gray-400">（同意日時・IPアドレスを記録します）</span>
+                {t('terms_agree')}<br />
+                <span className="text-xs text-gray-400">{t('terms_record_note')}</span>
               </span>
             </label>
             {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={prevStep}>
-                <ChevronLeft size={16} className="mr-1" /> 戻る
+                <ChevronLeft size={16} className="mr-1" /> {t('back')}
               </Button>
               <Button className="flex-1" disabled={!agreed} loading={loading} onClick={handleSubmit}>
-                次へ（パスキー設定）
+                {t('next_passkey')}
               </Button>
             </div>
           </div>

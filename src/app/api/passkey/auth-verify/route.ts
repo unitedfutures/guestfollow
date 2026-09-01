@@ -3,6 +3,7 @@ import { verifyAuthenticationResponse } from '@simplewebauthn/server'
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server'
 import { createClient } from '@supabase/supabase-js'
 import { getRpID, getOrigin } from '@/lib/passkey/config'
+import { generatePin } from '@/lib/utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -21,22 +22,26 @@ export async function POST(request: Request) {
     // チャレンジを取得
     const { data: challengeRecord, error: challengeError } = await supabase
       .from('passkey_challenges')
-      .select('id, challenge')
+      .select('id, challenge, expires_at')
       .eq('type', 'authentication')
       .eq('facility_id', facility_id)
-      .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
 
     if (challengeError || !challengeRecord) {
-      return NextResponse.json({ error: 'チャレンジが見つからないか期限切れです' }, { status: 400 })
+      console.error('challenge lookup error (auth):', challengeError, 'facility_id:', facility_id)
+      return NextResponse.json({ error: 'チャレンジが見つかりません。再度チェックインをお試しください。' }, { status: 400 })
+    }
+
+    if (challengeRecord.expires_at && new Date(challengeRecord.expires_at) < new Date()) {
+      return NextResponse.json({ error: 'チャレンジの期限が切れました。再度チェックインをお試しください。' }, { status: 400 })
     }
 
     // credential.id からゲスト情報を取得
     const { data: guestRecord, error: guestError } = await supabase
       .from('guest_records')
-      .select('id, booking_id, passkey_credential_id, passkey_public_key, passkey_counter')
+      .select('id, booking_id, passkey_credential_id, passkey_public_key, passkey_counter, checkin_completed_at')
       .eq('passkey_credential_id', credential.id)
       .single()
 
@@ -103,21 +108,28 @@ export async function POST(request: Request) {
 
     if (booking.status !== 'pre_checkin_done') {
       if (booking.status === 'checked_in') {
-        // すでにチェックイン済みの場合は既存PINを返す
+        // すでにチェックイン済み：checkin_completed_at が未設定なら補完してから既存PINを返す
+        if (!guestRecord.checkin_completed_at) {
+          await supabase
+            .from('guest_records')
+            .update({ checkin_completed_at: new Date().toISOString() })
+            .eq('id', guestRecord.id)
+        }
         const { data: code } = await supabase
           .from('access_codes')
-          .select('pin_code')
+          .select('code')
           .eq('booking_id', booking.id)
-          .order('created_at', { ascending: false })
+          .order('issued_at', { ascending: false })
           .limit(1)
           .single()
-        if (code) return NextResponse.json({ pin_code: (code as { pin_code: string }).pin_code })
+        if (code) return NextResponse.json({ pin_code: (code as { code: string }).code })
       }
       return NextResponse.json({ error: '事前登録が完了していません。' }, { status: 400 })
     }
 
-    // PINコードを生成
-    const pin_code = Math.floor(1000 + Math.random() * 9000).toString()
+    // PINコードを生成（施設に固定PINがあればそれを使用）
+    const { data: facilityData } = await supabase.from('facilities').select('pin_code').eq('id', facility_id).single()
+    const pin_code = facilityData?.pin_code?.trim() || generatePin(4)
 
     const now = new Date().toISOString()
     const checkoutDate = new Date(booking.checkout_date)
@@ -127,15 +139,15 @@ export async function POST(request: Request) {
     await supabase.from('access_codes').insert({
       booking_id: booking.id,
       facility_id,
-      pin_code,
-      valid_from: now,
-      valid_until: checkoutDate.toISOString(),
+      code: pin_code,
+      issued_at: now,
+      expires_at: checkoutDate.toISOString(),
     })
 
-    // guest_records の checked_in_at を更新
+    // guest_records のチェックイン完了日時を更新
     await supabase
       .from('guest_records')
-      .update({ checked_in_at: now })
+      .update({ checkin_completed_at: now })
       .eq('id', guestRecord.id)
 
     // bookings の status を checked_in に更新

@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Logo } from '@/components/logo'
 
 export const metadata = {
-  title: '特定商取引法に基づく表記 | CheckInn',
+  title: '特定商取引法に基づく表記 | GuestFollow',
 }
 
 const rows = [
@@ -16,12 +16,12 @@ const rows = [
     label: '連絡先',
     value: 'メールアドレス：support@united-futures.com\n※電話でのお問い合わせは受け付けておりません。メールにてご連絡ください。',
   },
-  { label: 'サービス名', value: 'CheckInn（チェックイン）' },
+  { label: 'サービス名', value: 'GuestFollow（チェックイン）' },
   {
     label: 'サービス内容',
     value: '無人宿泊施設向けセルフチェックインシステム。宿泊者情報の事前登録・パスキー認証によるチェックイン・宿泊者名簿の自動生成・Beds24連携等の機能を提供するSaaSサービス。',
   },
-  { label: 'サービスURL', value: 'https://checkinn-nu.vercel.app' },
+  { label: 'サービスURL', value: 'https://guestfollow.jp' },
   {
     label: '料金',
     value: '現在ベータ版として無料でご提供しています。\n今後、有料プランを導入する場合は事前にご案内いたします。',
@@ -52,7 +52,7 @@ const rows = [
   },
   {
     label: '特記事項',
-    value: 'CheckInnは宿泊施設の事業者（管理者）向けのツールです。ゲスト（宿泊者）の個人情報は各施設の宿泊者名簿作成・旅館業法遵守を目的として収集・保存されます。詳細はプライバシーポリシーをご確認ください。',
+    value: 'GuestFollowは宿泊施設の事業者（管理者）向けのツールです。ゲスト（宿泊者）の個人情報は各施設の宿泊者名簿作成・旅館業法遵守を目的として収集・保存されます。詳細はプライバシーポリシーをご確認ください。',
   },
 ]
 
@@ -98,7 +98,9 @@ export default function TokushoPage() {
       </main>
 
       <footer className="border-t border-gray-100 py-8 px-6 text-center">
-        <p className="text-xs text-gray-400">© 2026 CheckInn / 株式会社ユナイテッドフューチャーズ</p>
+        <p className="text-xs text-gray-400">
+          <a href="https://united-futures.com/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 transition-colors">© 2026 UNITED FUTURES, INC.</a>
+        </p>
         <div className="flex justify-center gap-6 mt-3 text-xs text-gray-400">
           <Link href="/tokusho" className="hover:text-navy-500 transition-colors">特定商取引法に基づく表記</Link>
           <Link href="/privacy" className="hover:text-navy-500 transition-colors">プライバシーポリシー</Link>

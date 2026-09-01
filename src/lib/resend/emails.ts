@@ -21,10 +21,10 @@ export async function sendPreCheckinEmail(params: PreCheckinEmailParams) {
   return resend.emails.send({
     from,
     to,
-    subject: `【CheckInn】${propertyName} ご宿泊前のお手続きをお願いします`,
+    subject: `【GuestFollow】${propertyName} ご宿泊前のお手続きをお願いします`,
     html: `
       <div style="font-family:'Helvetica Neue',sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#1f2937;">
-        <h1 style="color:#4f46e5;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">CheckInn</h1>
+        <h1 style="color:#4f46e5;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">GuestFollow</h1>
         <p style="color:#9ca3af;font-size:13px;margin-bottom:32px;">セルフチェックインシステム</p>
 
         <p>${guestName ? `${guestName} 様` : 'ご予約のお客様'}</p>
@@ -70,10 +70,10 @@ export async function sendCheckinQrEmail(params: CheckinQrEmailParams) {
   return resend.emails.send({
     from,
     to,
-    subject: `【CheckInn】${propertyName} チェックイン用QRコードをお送りします`,
+    subject: `【GuestFollow】${propertyName} チェックイン用QRコードをお送りします`,
     html: `
       <div style="font-family:'Helvetica Neue',sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#1f2937;">
-        <h1 style="color:#4f46e5;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">CheckInn</h1>
+        <h1 style="color:#4f46e5;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">GuestFollow</h1>
         <p style="color:#9ca3af;font-size:13px;margin-bottom:32px;">セルフチェックインシステム</p>
 
         <p>${guestName} 様</p>

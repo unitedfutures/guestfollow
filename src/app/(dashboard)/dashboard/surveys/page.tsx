@@ -1,15 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
 import { Card } from '@/components/ui/card'
-import { Star, MessageSquare, ClipboardList, Link2, Copy } from 'lucide-react'
+import { Star, MessageSquare, ClipboardList } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { SurveyConfigEditor } from './survey-config-editor'
-import type { SurveyConfig } from '@/app/survey/[qr_slug]/survey-form'
-import { SurveyUrlCopy } from './survey-url-copy'
-
-const DEFAULT_SURVEY_CONFIG: SurveyConfig = {
-  standard: { overall: true, cleanliness: true, facilities: true, location: true, revisit: false, comment: true },
-  custom: [],
-}
+import Link from 'next/link'
+import { getAccountAccess } from '@/lib/auth/roles'
 
 const RATING_KEYS = ['overall', 'cleanliness', 'facilities', 'location'] as const
 const RATING_LABELS: Record<string, string> = {
@@ -27,56 +22,23 @@ function Stars({ value }: { value: number }) {
 }
 
 export default async function SurveysPage() {
+  const { isCleanerOnly } = await getAccountAccess()
+  if (isCleanerOnly) redirect('/dashboard')
+
   const supabase = await createClient()
 
-  const [{ data: facilities }, { data: responses }] = await Promise.all([
-    supabase.from('facilities').select('id, name, qr_slug, survey_config').order('name'),
-    supabase.from('survey_responses')
-      .select('*, facilities(name)')
-      .order('created_at', { ascending: false }),
-  ])
-
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+  const { data: responses } = await supabase
+    .from('survey_responses')
+    .select('*, facilities(name)')
+    .order('created_at', { ascending: false })
 
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h2 className="text-2xl font-bold text-gray-900">アンケート管理</h2>
-        <p className="text-gray-500 text-sm mt-1">施設ごとのアンケートURL・設問設定・回答一覧</p>
-      </div>
-
-      {/* ── 施設ごとのURL・設問設定 ── */}
-      <div className="space-y-4 mb-10">
-        {(facilities ?? []).map(f => {
-          const config: SurveyConfig = {
-            ...DEFAULT_SURVEY_CONFIG,
-            ...(f.survey_config as Partial<SurveyConfig> ?? {}),
-            standard: { ...DEFAULT_SURVEY_CONFIG.standard, ...((f.survey_config as Partial<SurveyConfig>)?.standard ?? {}) },
-          }
-          const surveyUrl = `${appUrl}/survey/${f.qr_slug}`
-          return (
-            <Card key={f.id} className="p-5 space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-semibold text-gray-900">{f.name}</p>
-              </div>
-
-              {/* アンケートURL */}
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-1.5">
-                  <Link2 size={13} className="text-indigo-500" />
-                  <p className="text-xs font-semibold text-indigo-700">アンケートURL（チェックアウト後にゲストへ送付）</p>
-                </div>
-                <SurveyUrlCopy url={surveyUrl} />
-              </div>
-
-              {/* 設問設定 */}
-              <SurveyConfigEditor facilityId={f.id} currentConfig={config} />
-            </Card>
-          )
-        })}
-        {(facilities ?? []).length === 0 && (
-          <p className="text-sm text-gray-400 text-center py-8">施設が登録されていません</p>
-        )}
+        <h2 className="text-2xl font-bold text-gray-900">アンケート結果</h2>
+        <p className="text-gray-500 text-sm mt-1">
+          回答一覧（URLと設問設定は<Link href="/dashboard/facilities" className="text-navy-500 hover:underline">施設管理</Link>から）
+        </p>
       </div>
 
       {/* ── 回答一覧 ── */}

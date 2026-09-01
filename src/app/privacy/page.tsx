@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Logo } from '@/components/logo'
 
 export const metadata = {
-  title: 'プライバシーポリシー | CheckInn',
+  title: 'プライバシーポリシー | GuestFollow',
 }
 
 export default function PrivacyPage() {
@@ -28,7 +28,7 @@ export default function PrivacyPage() {
 
           <section>
             <p className="leading-relaxed">
-              株式会社ユナイテッドフューチャーズ（以下「当社」）は、CheckInn（以下「本サービス」）を運営するにあたり、
+              株式会社ユナイテッドフューチャーズ（以下「当社」）は、GuestFollow（以下「本サービス」）を運営するにあたり、
               利用者（宿泊施設の事業者および宿泊者）の個人情報を適切に取り扱うことを重要な責務と考えています。
               本プライバシーポリシー（以下「本ポリシー」）では、当社が収集する情報の種類・目的・取り扱い方法について説明します。
             </p>
@@ -191,7 +191,9 @@ export default function PrivacyPage() {
       </main>
 
       <footer className="border-t border-gray-100 py-8 px-6 text-center">
-        <p className="text-xs text-gray-400">© 2026 CheckInn / 株式会社ユナイテッドフューチャーズ</p>
+        <p className="text-xs text-gray-400">
+          <a href="https://united-futures.com/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 transition-colors">© 2026 UNITED FUTURES, INC.</a>
+        </p>
         <div className="flex justify-center gap-6 mt-3 text-xs text-gray-400">
           <Link href="/tokusho" className="hover:text-navy-500 transition-colors">特定商取引法に基づく表記</Link>
           <Link href="/privacy" className="hover:text-navy-500 transition-colors">プライバシーポリシー</Link>

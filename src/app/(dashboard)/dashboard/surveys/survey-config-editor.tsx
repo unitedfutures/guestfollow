@@ -4,8 +4,13 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Save, CheckCircle, Plus, Trash2, Settings2 } from 'lucide-react'
+import { Save, CheckCircle, Plus, Trash2, ClipboardList, Link2, ExternalLink, Copy } from 'lucide-react'
 import type { SurveyConfig, CustomQuestion } from '@/app/survey/[qr_slug]/survey-form'
+
+export const DEFAULT_SURVEY_CONFIG: SurveyConfig = {
+  standard: { overall: true, cleanliness: true, facilities: true, location: true, revisit: false, comment: true },
+  custom: [],
+}
 
 const STANDARD_ITEMS: { key: keyof SurveyConfig['standard']; label: string }[] = [
   { key: 'overall',     label: '総合満足度（★1〜5）' },
@@ -25,15 +30,27 @@ const TYPE_LABEL: Record<CustomQuestion['type'], string> = {
 interface Props {
   facilityId:    string
   currentConfig: SurveyConfig
+  qrSlug?:       string
+  appUrl?:       string
 }
 
-export function SurveyConfigEditor({ facilityId, currentConfig }: Props) {
+export function SurveyConfigEditor({ facilityId, currentConfig, qrSlug, appUrl }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [config, setConfig] = useState<SurveyConfig>(currentConfig)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [newQ, setNewQ] = useState({ text: '', type: 'rating' as CustomQuestion['type'] })
+
+  const surveyUrl = qrSlug && appUrl ? `${appUrl}/survey/${qrSlug}` : null
+
+  const handleCopy = async () => {
+    if (!surveyUrl) return
+    await navigator.clipboard.writeText(surveyUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2500)
+  }
 
   const toggleStandard = (key: keyof SurveyConfig['standard']) =>
     setConfig(c => ({ ...c, standard: { ...c.standard, [key]: !c.standard[key] } }))
@@ -66,14 +83,65 @@ export function SurveyConfigEditor({ facilityId, currentConfig }: Props) {
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
       >
         <div className="flex items-center gap-2">
-          <Settings2 size={14} className="text-gray-500" />
-          <span className="text-sm font-medium text-gray-600">アンケート設問の設定</span>
+          <ClipboardList size={14} className="text-gray-500" />
+          <span className="text-sm font-medium text-gray-600">アンケート設定</span>
         </div>
         <span className="text-xs text-gray-400">{open ? '▲ 閉じる' : '▼ 開く'}</span>
       </button>
 
       {open && (
         <div className="p-4 space-y-5 bg-white">
+
+          {/* アンケートURL */}
+          {surveyUrl && (
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5">
+                <Link2 size={13} className="text-amber-500" />
+                <p className="text-xs font-semibold text-amber-700">アンケートURL（チェックアウト後にゲストへ送付）</p>
+              </div>
+              <p className="text-xs text-gray-400">※アンケート機能を使用しない場合は送付しなくてもOKです</p>
+              <div className="flex items-center gap-2">
+                <code className="flex-1 text-xs bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 truncate text-gray-600 font-mono">
+                  {surveyUrl}
+                </code>
+                <button
+                  onClick={handleCopy}
+                  className={`shrink-0 inline-flex items-center gap-1.5 text-xs px-3 py-2 rounded-lg border font-medium transition-colors ${
+                    copied
+                      ? 'bg-indigo-600 text-white border-indigo-600'
+                      : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                  }`}
+                >
+                  {copied ? <CheckCircle size={13} /> : <Copy size={13} />}
+                  {copied ? 'コピー済み' : 'コピー'}
+                </button>
+              </div>
+              <a href={surveyUrl} target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-indigo-500 hover:underline">
+                <ExternalLink size={11} /> フォームを確認する
+              </a>
+            </div>
+          )}
+
+          {surveyUrl && <div className="border-t border-gray-100" />}
+
+          {/* Googleレビュー誘導URL */}
+          <div className="space-y-1.5">
+            <p className="text-sm font-semibold text-gray-800">Googleレビュー誘導</p>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              総合満足度が<span className="font-medium">☆5</span>のとき、回答後にGoogleレビューへの投稿を案内します（記入いただいた感想をコピーして貼り付けられます）。
+              GoogleビジネスプロフィールのクチコミURL（<span className="font-mono">g.page/r/…/review</span> など）を入力してください。空欄の場合は誘導は表示されません。
+            </p>
+            <input
+              type="url"
+              placeholder="https://g.page/r/xxxxxxxx/review"
+              value={config.google_review_url ?? ''}
+              onChange={e => setConfig(c => ({ ...c, google_review_url: e.target.value }))}
+              className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+
+          <div className="border-t border-gray-100" />
 
           {/* 固定設問 ON/OFF */}
           <div>

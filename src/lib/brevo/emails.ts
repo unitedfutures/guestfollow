@@ -4,7 +4,7 @@ const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email'
 
 const apiKey = process.env.BREVO_API_KEY ?? ''
 const fromEmail = process.env.BREVO_FROM_EMAIL || 'noreply@checkinn.jp'
-const fromName = process.env.BREVO_FROM_NAME || 'CheckInn'
+const fromName = process.env.BREVO_FROM_NAME || 'GuestFollow'
 
 async function sendEmail(payload: {
   to: { email: string; name?: string }[]
@@ -56,10 +56,10 @@ export async function sendPreCheckinEmail(params: PreCheckinEmailParams) {
 
   return sendEmail({
     to: [{ email: to, name: guestName || undefined }],
-    subject: `【CheckInn】${propertyName} ご宿泊前のお手続きをお願いします`,
+    subject: `【GuestFollow】${propertyName} ご宿泊前のお手続きをお願いします`,
     htmlContent: `
       <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#1f2937;">
-        <h1 style="color:#1C3461;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">CheckInn</h1>
+        <h1 style="color:#1C3461;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">GuestFollow</h1>
         <p style="color:#9ca3af;font-size:13px;margin-bottom:32px;">セルフチェックインシステム</p>
 
         <p>${guestName ? `${guestName} 様` : 'ご予約のお客様'}</p>
@@ -106,10 +106,10 @@ export async function sendCheckinQrEmail(params: CheckinQrEmailParams) {
 
   return sendEmail({
     to: [{ email: to, name: guestName || undefined }],
-    subject: `【CheckInn】${propertyName} チェックイン案内`,
+    subject: `【GuestFollow】${propertyName} チェックイン案内`,
     htmlContent: `
       <div style="font-family:'Helvetica Neue',Arial,sans-serif;max-width:560px;margin:0 auto;padding:32px 24px;color:#1f2937;">
-        <h1 style="color:#1C3461;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">CheckInn</h1>
+        <h1 style="color:#1C3461;font-size:22px;letter-spacing:0.1em;margin-bottom:4px;">GuestFollow</h1>
         <p style="color:#9ca3af;font-size:13px;margin-bottom:32px;">セルフチェックインシステム</p>
 
         <p>${guestName} 様</p>

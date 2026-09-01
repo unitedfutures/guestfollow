@@ -166,22 +166,32 @@ export function FormConfigEditor({ facilityId, currentConfig, currentMaxGuests =
   const [maxGuests, setMaxGuests] = useState(currentMaxGuests)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   const set = (key: keyof FormConfig, value: FieldLevel) =>
     setConfig(c => ({ ...c, [key]: value }))
 
   const handleSave = async () => {
     setSaving(true)
-    const res = await fetch('/api/facilities', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: facilityId, form_config: config, max_guests: maxGuests }),
-    })
-    setSaving(false)
-    if (res.ok) {
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2500)
-      router.refresh()
+    setSaveError('')
+    try {
+      const res = await fetch('/api/facilities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: facilityId, form_config: config, max_guests: maxGuests }),
+      })
+      if (res.ok) {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 2500)
+        router.refresh()
+      } else {
+        const data = await res.json().catch(() => ({}))
+        setSaveError(data.error || '保存に失敗しました。再度お試しください。')
+      }
+    } catch {
+      setSaveError('通信エラーが発生しました。')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -193,7 +203,7 @@ export function FormConfigEditor({ facilityId, currentConfig, currentMaxGuests =
       >
         <div className="flex items-center gap-2">
           <Settings2 size={14} className="text-gray-500" />
-          <span className="text-sm font-medium text-gray-600">施設設定</span>
+          <span className="text-sm font-medium text-gray-600">宿泊者名簿設定</span>
         </div>
         <span className="text-xs text-gray-400">{open ? '▲ 閉じる' : '▼ 開く'}</span>
       </button>
@@ -297,6 +307,9 @@ export function FormConfigEditor({ facilityId, currentConfig, currentMaxGuests =
             <p className="text-xs text-gray-400 mb-3">
               ※ 外国人宿泊者のパスポート情報は、外国人を含む場合に常に表示されます。
             </p>
+            {saveError && (
+              <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mb-2">{saveError}</p>
+            )}
             <Button size="sm" className="w-full" loading={saving} onClick={handleSave}>
               {saved
                 ? <><CheckCircle size={13} className="mr-1.5" />保存しました</>

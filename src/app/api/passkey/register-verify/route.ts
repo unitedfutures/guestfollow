@@ -19,19 +19,24 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '必須パラメータが不足しています' }, { status: 400 })
     }
 
-    // チャレンジを取得
+    // チャレンジを取得（expires_at が null の行も拾えるよう or 条件にする）
     const { data: challengeRecord, error: challengeError } = await supabase
       .from('passkey_challenges')
-      .select('id, challenge')
+      .select('id, challenge, expires_at')
       .eq('type', 'registration')
       .eq('guest_record_id', guest_record_id)
-      .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
 
     if (challengeError || !challengeRecord) {
-      return NextResponse.json({ error: 'チャレンジが見つからないか期限切れです' }, { status: 400 })
+      console.error('challenge lookup error:', challengeError, 'guest_record_id:', guest_record_id)
+      return NextResponse.json({ error: 'チャレンジが見つかりません。もう一度最初からお試しください。' }, { status: 400 })
+    }
+
+    // expires_at がある場合のみ期限チェック
+    if (challengeRecord.expires_at && new Date(challengeRecord.expires_at) < new Date()) {
+      return NextResponse.json({ error: 'チャレンジの期限が切れました。もう一度最初からお試しください。' }, { status: 400 })
     }
 
     // 登録レスポンスを検証

@@ -80,12 +80,12 @@ export function Logo({ className, size = 'md', variant = 'default', iconOnly = f
           <span
             style={{ color: navyColor, fontWeight: 700, fontSize: size === 'sm' ? '1.1rem' : size === 'md' ? '1.35rem' : '1.8rem', letterSpacing: '-0.02em', fontFamily: 'system-ui' }}
           >
-            Check
+            Guest
           </span>
           <span
             style={{ color: goldColor, fontWeight: 800, fontSize: size === 'sm' ? '1.1rem' : size === 'md' ? '1.35rem' : '1.8rem', letterSpacing: '-0.02em', fontFamily: 'system-ui' }}
           >
-            Inn
+            Follow
           </span>
         </div>
       )}

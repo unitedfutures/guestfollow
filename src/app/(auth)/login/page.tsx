@@ -1,14 +1,16 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { Suspense, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-export default function LoginPage() {
+function LoginForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const redirect = searchParams.get('redirect') || '/dashboard'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -28,7 +30,7 @@ export default function LoginPage() {
       return
     }
 
-    router.push('/dashboard')
+    router.push(redirect)
     router.refresh()
   }
 
@@ -36,7 +38,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-navy-50 to-white flex items-center justify-center p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-navy-500 tracking-wide">CheckInn</h1>
+          <h1 className="text-3xl font-bold text-navy-500 tracking-wide">GuestFollow</h1>
           <p className="text-gray-500 mt-2 text-sm">無人宿泊施設 セルフチェックインシステム</p>
         </div>
 
@@ -63,6 +65,12 @@ export default function LoginPage() {
               required
             />
 
+            <div className="text-right -mt-1">
+              <Link href="/forgot-password" className="text-xs text-navy-500 hover:underline">
+                パスワードをお忘れですか？
+              </Link>
+            </div>
+
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
             )}
@@ -81,5 +89,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
   )
 }

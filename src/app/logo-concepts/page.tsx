@@ -2,7 +2,7 @@ export default function LogoConcepts() {
   return (
     <div className="min-h-screen bg-gray-100 py-16 px-6">
       <div className="max-w-5xl mx-auto">
-        <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">CheckInn ロゴ案</h1>
+        <h1 className="text-2xl font-bold text-gray-800 mb-2 text-center">GuestFollow ロゴ案</h1>
         <p className="text-gray-400 text-sm text-center mb-12">10案 — クリックして拡大イメージを確認してください</p>
 
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6">

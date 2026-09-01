@@ -17,7 +17,7 @@ export async function POST(request: Request) {
   // 予約を guest_qr_token と facility_id で照合
   const { data: booking } = await supabase
     .from('bookings')
-    .select('*, facilities(remote_lock_device_id)')
+    .select('*, facilities(remote_lock_device_id, pin_code)')
     .eq('guest_qr_token', guest_qr_token)
     .eq('facility_id', facility_id)
     .single()
@@ -70,8 +70,9 @@ export async function POST(request: Request) {
     if (!uploadError) face_photo_path = path
   }
 
-  // 暗証番号を生成
-  const pin_code = generatePin(4)
+  // 暗証番号：施設に固定PINが設定されていればそれを使用、なければランダム4桁
+  const facility = booking.facilities as unknown as { remote_lock_device_id: string | null; pin_code: string | null }
+  const pin_code = facility?.pin_code?.trim() || generatePin(4)
 
   // access_codes に保存
   const checkoutDate = new Date(booking.checkout_date)
@@ -80,12 +81,11 @@ export async function POST(request: Request) {
   let remoteLockResponse = null
 
   // RemoteLOCK 連携（device_id が設定されている場合）
-  const facility = booking.facilities as unknown as { remote_lock_device_id: string | null }
   if (facility?.remote_lock_device_id) {
     try {
       remoteLockResponse = await createAccessCode({
         deviceId: facility.remote_lock_device_id,
-        name: `CheckInn-${booking.id.slice(0, 8)}`,
+        name: `GuestFollow-${booking.id.slice(0, 8)}`,
         pin: pin_code,
         startsAt: now,
         endsAt: checkoutDate.toISOString(),

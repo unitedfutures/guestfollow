@@ -33,7 +33,7 @@ export function FacilityQR({ facility }: { facility: Facility }) {
     const win = window.open('', '_blank')
     if (!win) return
     win.document.write(`
-      <html><head><title>CheckInn QR - ${facility.name}</title>
+      <html><head><title>GuestFollow QR - ${facility.name}</title>
       <style>body{text-align:center;font-family:sans-serif;padding:40px}h2{margin-bottom:4px}p{color:#666;font-size:14px;margin-bottom:20px}</style>
       </head><body>
       <h2>${facility.name}</h2>
