@@ -34,7 +34,7 @@ export async function POST(request: Request) {
   }
 
   if (!properties.length) {
-    return NextResponse.json({ imported: 0, skipped: 0, message: 'Beds24に物件が登録されていません' })
+    return NextResponse.json({ imported: 0, skipped: 0, message: 'Beds24に施設が登録されていません' })
   }
 
   // 既存施設の beds24_property_id を取得

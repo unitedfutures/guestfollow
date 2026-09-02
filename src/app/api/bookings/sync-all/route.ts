@@ -34,7 +34,7 @@ export async function POST() {
     .eq('id', user.id)
     .single()
 
-  // 過去24ヶ月の月初〜3ヶ月後の月末の予約を取り込む（売上レポート用に過去分も対象）
+  // 過去24ヶ月の月初〜3ヶ月後の月末の予約を同期する（売上レポート用に過去分も対象）
   // ※ setMonth は月末日で桁あふれするため、Date.UTC で月初/月末に固定する
   const now = new Date()
   const y = now.getUTCFullYear(), m = now.getUTCMonth()

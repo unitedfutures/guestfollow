@@ -4,7 +4,7 @@ import { getRooms } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
 import { canManage } from '@/lib/auth/can-manage'
 
-// 施設(Beds24物件)の部屋一覧を取得
+// 施設(Beds24 property)の部屋一覧を取得
 export async function GET(request: Request) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

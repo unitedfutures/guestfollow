@@ -184,7 +184,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
   </div>
   <table>
     <thead><tr>
-      <th>物件</th><th>OTA</th><th>チェックイン〜アウト</th><th>予約名</th><th class="c">人数</th>
+      <th>施設</th><th>OTA</th><th>チェックイン〜アウト</th><th>予約名</th><th class="c">人数</th>
       <th class="r">売上</th><th class="r">OTA手数料</th><th class="r">粗利益</th>
     </tr></thead>
     <tbody>${rowsHtml || '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:24px;">該当する予約がありません</td></tr>'}</tbody>
@@ -213,7 +213,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">売上レポート</h2>
-          <p className="text-gray-400 text-sm mt-0.5">物件・時期・予約ステータスで絞り込み</p>
+          <p className="text-gray-400 text-sm mt-0.5">施設・時期・予約ステータスで絞り込み</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -380,7 +380,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
           <div className="overflow-x-auto">
             {/* ヘッダー（デスクトップ） */}
             <div className="hidden lg:grid grid-cols-[1.1fr_1.3fr_1.2fr_0.5fr_1fr_1fr_1fr] gap-4 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide min-w-[900px]">
-              <div>物件 / OTA</div>
+              <div>施設 / OTA</div>
               <div>チェックイン 〜 アウト</div>
               <div>予約名</div>
               <div className="text-center">人数</div>
@@ -399,7 +399,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                       idx % 2 === 1 ? 'bg-gray-50/60' : 'bg-white'
                     } ${cancelled ? 'opacity-60' : ''}`}
                   >
-                    {/* 物件 / OTA */}
+                    {/* 施設 / OTA */}
                     <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                       <span className="text-sm font-semibold text-gray-900 truncate">{b.facilities?.name ?? '—'}</span>
                       <ChannelBadge channel={b.ota_channel} />
@@ -464,12 +464,12 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
         <div className="bg-white border border-gray-200 rounded-xl text-center py-16 text-gray-400">
           <TrendingUp size={40} className="mx-auto mb-3 opacity-30" />
           <p className="text-sm">該当する予約がありません</p>
-          <p className="text-xs mt-1">フィルターを変更するか、予約一覧の「予約を同期」で金額を取り込んでください</p>
+          <p className="text-xs mt-1">フィルターを変更するか、予約一覧の「予約を同期」で金額を反映してください</p>
         </div>
       )}
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        ※ 売上＝サイトコントローラー（Beds24 / Airhost）から取り込んだOTA予約の総額。OTA手数料＝Beds24が取得した手数料の実額（手動予約・Airhostは0）。粗利益＝売上−OTA手数料。反映には予約一覧の「予約を同期」を実行してください。
+        ※ 売上＝サイトコントローラー（Beds24 / Airhost）から同期したOTA予約の総額。OTA手数料＝Beds24が取得した手数料の実額（手動予約・Airhostは0）。粗利益＝売上−OTA手数料。反映には予約一覧の「予約を同期」を実行してください。
       </p>
 
       {/* 入金の違いポップアップ */}

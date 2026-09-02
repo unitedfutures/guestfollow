@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   }
 
   if (!properties.length) {
-    return NextResponse.json({ imported: 0, skipped: 0, message: 'Airhostに物件が登録されていません' })
+    return NextResponse.json({ imported: 0, skipped: 0, message: 'Airhostに施設が登録されていません' })
   }
 
   // 既存施設の airhost_property_id を取得

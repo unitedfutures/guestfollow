@@ -92,7 +92,7 @@ export default async function LandingPage() {
               <span className="bg-gradient-to-r from-navy-700 via-indigo-600 to-navy-500 bg-clip-text text-transparent">宿泊運営を、ひとつに。</span>
             </h1>
             <p className="text-lg text-gray-600 leading-relaxed max-w-2xl mx-auto mb-9">
-              Beds24・Airhostから予約を自動取込。宿泊者名簿・セルフチェックイン・アンケートから、
+              Beds24・Airhostから予約を自動同期。宿泊者名簿・セルフチェックイン・アンケートから、
               ゲストメッセージ、売上レポート、宿泊実績報告、宿泊税、宿泊価格の調整まで。
               バラバラだった運営業務を、ひとつのダッシュボードで。
             </p>
@@ -125,7 +125,7 @@ export default async function LandingPage() {
               <div className="p-6">
                 <div className="border border-gray-200 rounded-xl overflow-hidden">
                   <div className="grid grid-cols-[1.6fr_1.2fr_1fr_1fr_1fr] gap-2 px-4 py-2.5 bg-gray-50 border-b border-gray-200 text-[10px] font-semibold text-gray-400 uppercase tracking-wide">
-                    <div>物件 / 連携元</div><div>チェックイン</div>
+                    <div>施設 / 連携元</div><div>チェックイン</div>
                     <div className="text-center">名簿</div><div className="text-center">チェックイン</div><div className="text-center">アンケート</div>
                   </div>
                   {[
@@ -192,7 +192,7 @@ export default async function LandingPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {[
-              { icon: LayoutDashboard, title: '一元管理', lead: '散らばった情報を、1画面に。', body: 'Beds24・Airhostの予約と施設を自動で取り込み、名簿・チェックイン・アンケート・メッセージの状況を予約ごとに一覧表示。対応が必要なゲストが一目でわかります。' },
+              { icon: LayoutDashboard, title: '一元管理', lead: '散らばった情報を、1画面に。', body: 'Beds24・Airhostの予約と施設を自動で同期し、名簿・チェックイン・アンケート・メッセージの状況を予約ごとに一覧表示。対応が必要なゲストが一目でわかります。' },
               { icon: Zap, title: '自動化', lead: '手作業を、仕組みに。', body: '名簿はゲストが自己入力、チェックインはQR×パスキーで無人化。売上・粗利益、宿泊実績、宿泊税まで自動集計し、CSV/PDFで出力できます。' },
               { icon: Scale, title: '法令対応', lead: '守るべきことを、標準で。', body: '旅館業法改正（無人施設の本人確認）、住宅宿泊事業法 第14条の定期報告、自治体ごとの宿泊税に対応。保健所への説明資料としても使えます。' },
             ].map(({ icon: Icon, title, lead, body }) => (
@@ -230,7 +230,7 @@ export default async function LandingPage() {
               </div>
               <ul className="space-y-3">
                 {[
-                  { icon: RefreshCw, t: 'Beds24・Airhostから施設と予約を自動取込（複数アカウント可）' },
+                  { icon: RefreshCw, t: 'Beds24・Airhostから施設と予約を自動同期（複数アカウント可）' },
                   { icon: LayoutDashboard, t: '名簿・チェックイン・アンケートの進捗を予約ごとに表示' },
                   { icon: Search, t: '施設・期間・ステータス・ゲスト名でフィルタ／検索' },
                   { icon: Mail, t: '予約ごとの登録URLをワンクリックでコピー・メール送付' },
@@ -382,7 +382,7 @@ export default async function LandingPage() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {[
-              { icon: RefreshCw, t: '予約自動取込', d: 'Beds24／Airhost、複数アカウント' },
+              { icon: RefreshCw, t: '予約自動同期', d: 'Beds24／Airhost、複数アカウント' },
               { icon: FileText, t: '宿泊者名簿', d: '自己入力・3年保存・CSV' },
               { icon: QrCode, t: 'セルフチェックイン', d: 'QR×パスキー・暗証番号発行' },
               { icon: ClipboardList, t: 'アンケート', d: '満足度・Googleレビュー誘導' },
@@ -508,10 +508,10 @@ export default async function LandingPage() {
           </div>
           <div className="divide-y divide-gray-200 border-y border-gray-200">
             {[
-              { q: '導入に機器や工事は必要ですか？', a: '不要です。メールアドレスでアカウントを作成し、Beds24・AirhostのAPIトークンを登録するだけで施設と予約が取り込まれます。チェックインはゲストのスマホで完結します。' },
+              { q: '導入に機器や工事は必要ですか？', a: '不要です。メールアドレスでアカウントを作成し、Beds24・AirhostのAPIトークンを登録するだけで施設と予約が同期されます。チェックインはゲストのスマホで完結します。' },
               { q: 'Beds24・Airhost以外の予約も管理できますか？', a: 'はい。手動登録に対応しています。サイトコントローラー連携済みの予約と同じ画面で管理できます。' },
               { q: '旅館業法改正（無人施設の本人確認）に対応していますか？', a: '対応しています。事前の本人確認情報の取得、パスキーによる照合、顔写真の取得、本人確認後の鍵交付、名簿の3年保存など、要件対応表のとおり標準対応です。' },
-              { q: '売上や宿泊税、民泊の定期報告はどこまで自動化できますか？', a: '取り込んだ予約から、売上・OTA手数料・粗利益、宿泊実績（宿泊日数・延べ宿泊者数・国籍別内訳）、宿泊税を自動集計し、CSV/PDFで出力できます。提出は各システム・様式に従ってご確認ください。' },
+              { q: '売上や宿泊税、民泊の定期報告はどこまで自動化できますか？', a: '同期した予約から、売上・OTA手数料・粗利益、宿泊実績（宿泊日数・延べ宿泊者数・国籍別内訳）、宿泊税を自動集計し、CSV/PDFで出力できます。提出は各システム・様式に従ってご確認ください。' },
               { q: '宿泊価格の調整はOTAに反映されますか？', a: 'Beds24連携施設は、設定したルールで価格・最低宿泊日数を作成し、確認のうえBeds24へ反映できます（連携中のOTAへ配信）。反映には書き込み権限付きのトークン設定が必要です。' },
               { q: 'ゲストは日本語以外でも利用できますか？', a: 'はい。名簿・チェックイン・アンケートのゲスト向け画面は15言語に対応しています。' },
             ].map(({ q, a }) => (

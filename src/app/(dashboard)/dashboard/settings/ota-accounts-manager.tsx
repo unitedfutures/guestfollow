@@ -44,7 +44,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
 
   const [addStep, setAddStep] = useState<string | null>(null)
   const [addResult, setAddResult] = useState<string | null>(null)
-  // 一覧側の操作（再取込・削除・解除）のエラー表示
+  // 一覧側の操作（再同期・削除・解除）のエラー表示
   const [opError, setOpError] = useState('')
 
   // Refresh Token（invite code）設定用 state
@@ -129,7 +129,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
         return
       }
 
-      // ② 施設を自動インポート（トークン検証を兼ねる）
+      // ② 施設を自動同期（トークン検証を兼ねる）
       setAddStep('施設情報を読み込み中…')
       const importRes = await fetch(`/api/${provider}/import-facilities`, {
         method: 'POST',
@@ -155,7 +155,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
         const syncRes = await fetch('/api/bookings/sync-all', { method: 'POST' })
         const syncData = await syncRes.json().catch(() => ({}))
         if (syncRes.ok && !(Array.isArray(syncData.errors) && syncData.errors.length > 0)) {
-          syncedNote = `／ 予約 ${syncData.synced}件を取り込みました`
+          syncedNote = `／ 予約 ${syncData.synced}件を同期しました`
         } else {
           syncFailed = true
         }
@@ -168,10 +168,10 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
       setLabel('')
       setApiKey('')
       setProvider('beds24')
-      const importNote = `施設 ${importData.imported}件をインポート${importData.skipped > 0 ? `（${importData.skipped}件は登録済み）` : ''}`
+      const importNote = `施設 ${importData.imported}件を同期${importData.skipped > 0 ? `（${importData.skipped}件は登録済み）` : ''}`
       if (syncFailed) {
         setOpError(
-          `アカウントは登録されましたが予約の同期に失敗しました。あとで「再取込」から再実行できます（${importNote}）`
+          `アカウントは登録されましたが予約の同期に失敗しました。あとで「再同期」から再実行できます（${importNote}）`
         )
       } else {
         setAddResult(`連携が完了しました。${importNote}${syncedNote}`)
@@ -206,7 +206,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
     }
   }
 
-  // 連携済みアカウントの再取込：施設を再インポート → 予約を同期
+  // 連携済みアカウントの再同期：施設を再同期 → 予約を同期
   const handleRefreshAccount = async (acc: OtaAccount) => {
     setRefreshingId(acc.id)
     setAddError('')
@@ -221,7 +221,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
       })
       const impData = await impRes.json().catch(() => ({}))
       if (!impRes.ok) {
-        setOpError(impData.error ?? '施設の再取込に失敗しました。トークンが有効かご確認ください。')
+        setOpError(impData.error ?? '施設の再同期に失敗しました。トークンが有効かご確認ください。')
         return
       }
 
@@ -239,10 +239,10 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
         syncFailed = true
       }
 
-      const importNote = `施設 ${impData.imported}件をインポート${impData.skipped > 0 ? `（${impData.skipped}件は登録済み）` : ''}`
+      const importNote = `施設 ${impData.imported}件を同期${impData.skipped > 0 ? `（${impData.skipped}件は登録済み）` : ''}`
       if (syncFailed) {
         setOpError(
-          `施設は更新されましたが予約の同期に失敗しました。あとで「再取込」から再実行できます（${importNote}）`
+          `施設は更新されましたが予約の同期に失敗しました。あとで「再同期」から再実行できます（${importNote}）`
         )
       } else {
         setAddResult(`${PROVIDER_LABELS[acc.provider]}を更新しました。${importNote}${syncedNote}`)
@@ -315,7 +315,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
               <input
                 type="text"
                 className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="例：メインアカウント、長野物件用"
+                placeholder="例：メインアカウント、長野の施設用"
                 value={label}
                 onChange={e => setLabel(e.target.value)}
               />
@@ -341,7 +341,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
               </div>
               {provider === 'beds24' ? (
                 <div className="text-xs text-gray-400 mt-1 leading-relaxed">
-                  <span className="font-medium text-gray-600">用途：施設情報・予約の取り込み（読み取り）。</span><br />
+                  <span className="font-medium text-gray-600">用途：施設情報・予約の同期（読み取り）。</span><br />
                   Beds24管理画面 → <span className="font-medium text-gray-500">SETTINGS → ACCOUNT → ACCESS</span> の
                   「Long Life Token」を生成し、<code className="bg-gray-100 px-1 rounded">read:properties</code> /
                   <code className="bg-gray-100 px-1 rounded">read:bookings</code> スコープを付けて貼り付けてください。<br />
@@ -396,8 +396,8 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
                     <button
                       onClick={() => handleRefreshAccount(acc)}
                       disabled={refreshingId === acc.id || deletingId === acc.id}
-                      title="最新の施設・予約を再取込"
-                      aria-label="最新の施設・予約を再取込"
+                      title="最新の施設・予約を再同期"
+                      aria-label="最新の施設・予約を再同期"
                       className="text-gray-400 hover:text-navy-600 transition-colors p-1 rounded disabled:opacity-50"
                     >
                       <RefreshCw size={15} className={refreshingId === acc.id ? 'animate-spin' : ''} />
@@ -518,7 +518,7 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
                 <KeyRound size={11} className="text-gray-500" /> ① Long Life Token（読み取り用・必須）
               </p>
               <p>
-                施設情報や予約の<span className="font-medium">取り込み（読み取り）</span>に使います。
+                施設情報や予約の<span className="font-medium">同期（読み取り）</span>に使います。
                 Beds24管理画面 → <span className="font-medium">SETTINGS → ACCOUNT → ACCESS</span> で発行し、
                 アカウント追加時に入力します。読み取り専用のため<span className="font-medium">メッセージ送信はできません</span>。
               </p>

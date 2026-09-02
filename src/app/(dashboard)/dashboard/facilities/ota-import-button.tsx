@@ -47,7 +47,7 @@ export function OtaImportButton({ accounts }: { accounts: OtaAccount[] }) {
 
     if (res.ok) {
       const msg = data.imported > 0
-        ? `${data.imported}件の施設をインポートしました${data.skipped > 0 ? `（${data.skipped}件は登録済み）` : ''}`
+        ? `${data.imported}件の施設を同期しました${data.skipped > 0 ? `（${data.skipped}件は登録済み）` : ''}`
         : `新規施設はありませんでした（${data.skipped}件は登録済み）`
       setResult({ type: 'success', message: msg })
       router.refresh()
@@ -83,8 +83,8 @@ export function OtaImportButton({ accounts }: { accounts: OtaAccount[] }) {
         <Button variant="outline" onClick={handleImport} loading={loading}>
           <Download size={16} className="mr-1.5" />
           {accounts.length === 1
-            ? `${PROVIDER_LABELS[selectedAccount.provider]}から施設をインポート`
-            : '施設をインポート'
+            ? `${PROVIDER_LABELS[selectedAccount.provider]}から施設を同期`
+            : '施設を同期'
           }
         </Button>
       </div>

@@ -150,7 +150,7 @@ export default async function FacilitiesPage() {
         <div className="text-center py-16 text-gray-400">
           <Building2 size={48} className="mx-auto mb-4 opacity-30" />
           <p className="text-sm">施設が登録されていません</p>
-          <p className="text-xs mt-1">「施設を追加」ボタンから登録してください（Beds24連携の場合はインポートも可）</p>
+          <p className="text-xs mt-1">「施設を追加」ボタンから登録してください（Beds24連携の場合は「施設を同期」も可）</p>
         </div>
       )}
 

@@ -47,7 +47,7 @@ export async function POST(request: Request) {
   }
 
   const today = new Date()
-  // 過去24ヶ月〜将来3ヶ月の予約を取り込む（売上レポート用に過去分も対象）
+  // 過去24ヶ月〜将来3ヶ月の予約を同期する（売上レポート用に過去分も対象）
   const dateFrom = new Date(new Date().setMonth(today.getMonth() - 24)).toISOString().split('T')[0]
   const dateTo = new Date(new Date().setMonth(today.getMonth() + 3)).toISOString().split('T')[0]
 

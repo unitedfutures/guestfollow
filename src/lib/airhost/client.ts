@@ -2,7 +2,7 @@
  * Airhost Connect API クライアント
  * API仕様: https://api-connect.airhost.co/api/v1/
  *
- * ※ Airhostの実際のAPIキーと物件IDはダッシュボード > 設定 > 外部連携から設定してください。
+ * ※ Airhostの実際のAPIキーとProperty IDはダッシュボード > 設定 > 外部連携から設定してください。
  */
 
 const AIRHOST_BASE_URL = 'https://api-connect.airhost.co/api/v1'
@@ -32,7 +32,7 @@ export interface AirhostProperty {
 
 export interface AirhostBooking {
   uid: string           // 予約ID
-  property_id: string   // 物件ID
+  property_id: string   // 施設ID（Airhost Property ID）
   guest_name: string    // ゲスト氏名
   guest_email: string   // ゲストメール
   check_in: string      // チェックイン日 (YYYY-MM-DD)

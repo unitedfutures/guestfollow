@@ -164,7 +164,7 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
       }
       setSyncNote({
         type: 'ok',
-        text: data.synced > 0 ? `${data.synced}件のメッセージを取り込みました` : '新着メッセージはありません',
+        text: data.synced > 0 ? `${data.synced}件のメッセージを同期しました` : '新着メッセージはありません',
       })
       // 再読込
       const listRes = await fetch('/api/messages')
@@ -303,7 +303,7 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
               <div className="text-center py-16 px-4 text-gray-400">
                 <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
                 <p className="text-sm">メッセージがありません</p>
-                <p className="text-xs mt-1">「メッセージを同期」でBeds24から取り込んでください</p>
+                <p className="text-xs mt-1">Beds24から取得するには「メッセージを同期」を実行してください</p>
               </div>
             )}
           </div>

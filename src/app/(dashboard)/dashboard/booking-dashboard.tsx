@@ -146,7 +146,7 @@ function SyncAllButton() {
       setMessage({
         type: hasErrors ? 'error' : 'success',
         text: data.synced > 0
-          ? `${data.synced}件の新規予約を取り込みました${errNote}`
+          ? `${data.synced}件の新規予約を同期しました${errNote}`
           : `新規予約はありません${errNote}`,
       })
       router.refresh()
@@ -658,7 +658,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
           {/* テーブルヘッダー */}
           <div className={`hidden lg:grid ${gridCols} gap-4 px-5 py-3 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide`}>
             {!cleanerMode && <div />}
-            <div>物件 / OTA</div>
+            <div>施設 / OTA</div>
             <button
               className="flex items-center gap-1 hover:text-gray-800 transition-colors text-left"
               onClick={() => setSortAsc(a => !a)}
@@ -703,7 +703,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
                       </div>
                     )}
 
-                    {/* 物件名 + 予約OTA + サイトコントローラー */}
+                    {/* 施設名 + 予約OTA + サイトコントローラー */}
                     <div className="flex items-center gap-2 min-w-0">
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5 flex-wrap">
@@ -799,7 +799,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
         <div className="bg-white border border-gray-200 rounded-xl text-center py-20">
           <CalendarDays size={48} className="mx-auto mb-4 text-gray-200" />
           <p className="text-sm text-gray-500 font-medium">該当する予約がありません</p>
-          <p className="text-xs text-gray-400 mt-1">フィルターを変更するか、「予約を同期」で取り込んでください</p>
+          <p className="text-xs text-gray-400 mt-1">フィルターを変更するか、「予約を同期」を実行してください</p>
           <Link
             href="/dashboard/facilities"
             className="inline-flex items-center gap-1.5 mt-4 text-sm text-indigo-600 hover:text-indigo-800 font-medium transition-colors"

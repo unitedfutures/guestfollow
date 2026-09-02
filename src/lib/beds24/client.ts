@@ -169,7 +169,7 @@ export interface CalendarDay {
   numAvail: number | null
 }
 
-/** 物件の部屋一覧を取得 */
+/** 施設の部屋一覧を取得 */
 export async function getRooms(apiKey: string, propertyId: string): Promise<Beds24Room[]> {
   const raw = await beds24Fetch(`/properties?id=${encodeURIComponent(propertyId)}&includeAllRooms=true`, apiKey)
   const prop = (raw?.data ?? [])[0] ?? {}
@@ -268,7 +268,7 @@ export async function getBookings(
   const raw = await beds24Fetch(`/bookings?${params}`, apiKey)
   const list = unwrapData(raw)
   return list
-    // 'black'（ブロック＝実予約ではない）のみ除外。cancelled は売上レポート用に取り込む
+    // 'black'（ブロック＝実予約ではない）のみ除外。cancelled は売上レポート用に同期する
     .filter(b => String(b.status ?? '').toLowerCase() !== 'black')
     .map(b => {
       const status = String(b.status ?? '').toLowerCase()
