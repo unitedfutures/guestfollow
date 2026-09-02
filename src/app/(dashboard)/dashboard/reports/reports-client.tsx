@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
-import { Filter, ChevronDown, CalendarDays, XCircle, TrendingUp, Download, FileText, Info, X } from 'lucide-react'
+import { Filter, ChevronDown, CalendarDays, CalendarRange, XCircle, TrendingUp, Download, FileText, Info, X } from 'lucide-react'
 import { formatDate, formatYen as yen, jstDate } from '@/lib/utils'
 import { ChannelBadge } from '@/components/dashboard/channel-badge'
 import { OtaBadge } from '@/components/dashboard/ota-badge'
@@ -33,14 +33,131 @@ const profitOf = (b: Booking) => (b.price ?? 0) - (b.commission ?? 0)
 const defaultFrom = jstDate()
 const defaultTo = jstDate(new Date(new Date().setMonth(new Date().getMonth() + 3)))
 
+type StatusFilter = 'confirmed' | 'cancelled' | 'all'
+type DateBasis = 'checkout' | 'checkin'
+
+const STATUS_LABEL: Record<StatusFilter, string> = {
+  confirmed: '予約済', cancelled: 'キャンセル', all: 'すべて',
+}
+const BASIS_LABEL: Record<DateBasis, string> = {
+  checkout: 'チェックアウト日', checkin: 'チェックイン日',
+}
+
+const dateOfBy = (b: Booking, basis: DateBasis) => (basis === 'checkout' ? b.checkout_date : b.checkin_date)
+const normStatus = (s: string | null) => (s === 'cancelled' ? 'cancelled' : 'confirmed')
+
+// ファイル名に使えない文字を除去
+const sanitizeName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').trim()
+
+const esc = (s: unknown) =>
+  String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
+
+// PDFの中身を組み立てる（通常の出力・月次レポートで共用）
+function buildReportHtml(opts: {
+  rows: Booking[]
+  title: string
+  fileName: string
+  facilityName: string
+  statusLabel: string
+  rangeLabel: string
+}): string {
+  const { rows, title, fileName, facilityName, statusLabel, rangeLabel } = opts
+  const totalSales = rows.reduce((s, b) => s + salesOf(b), 0)
+  const totalFee = rows.reduce((s, b) => s + feeOf(b), 0)
+  const totalProfit = totalSales - totalFee
+  const count = rows.length
+  const today = new Date().toLocaleDateString('ja-JP')
+
+  const rowsHtml = rows.map(b => `
+      <tr class="${b.ota_status === 'cancelled' ? 'cancelled' : ''}">
+        <td>${esc(b.facilities?.name ?? '—')}</td>
+        <td class="ota">${esc(b.ota_source ?? '手動')}</td>
+        <td>${esc(formatDate(b.checkin_date))} 〜 ${esc(formatDate(b.checkout_date))}</td>
+        <td>${esc(b.guest_name ?? '—')}</td>
+        <td class="c">${esc(b.num_guests)}</td>
+        <td class="r">${yen(salesOf(b))}</td>
+        <td class="r fee">${feeOf(b) ? '−' + yen(feeOf(b)) : '—'}</td>
+        <td class="r profit">${yen(profitOf(b))}</td>
+      </tr>`).join('')
+
+  return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
+<title>${esc(fileName)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Hiragino Sans','Helvetica Neue',Arial,sans-serif; color:#1f2937; margin:32px; font-size:12px; }
+  .head { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1e293b; padding-bottom:12px; margin-bottom:16px; }
+  h1 { font-size:20px; margin:0; color:#1e293b; letter-spacing:.04em; }
+  .brand { font-size:12px; color:#6366f1; font-weight:700; letter-spacing:.1em; margin-bottom:2px; }
+  .meta { text-align:right; font-size:11px; color:#6b7280; line-height:1.7; }
+  .cards { display:flex; gap:12px; margin-bottom:18px; }
+  .card { flex:1; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
+  .card .l { font-size:10px; color:#6b7280; margin-bottom:4px; }
+  .card .v { font-size:18px; font-weight:800; }
+  .card.sales .v { color:#1e293b; } .card.fee .v { color:#b45309; } .card.profit { background:#eef2ff; border-color:#c7d2fe; } .card.profit .v { color:#4338ca; }
+  table { width:100%; border-collapse:collapse; }
+  th,td { padding:7px 8px; border-bottom:1px solid #e5e7eb; text-align:left; }
+  th { background:#f8fafc; font-size:10px; color:#475569; text-transform:none; border-bottom:1.5px solid #cbd5e1; }
+  td.r,th.r { text-align:right; white-space:nowrap; } td.c,th.c { text-align:center; }
+  td.ota { color:#6b7280; } td.fee { color:#b45309; } td.profit { font-weight:700; color:#4338ca; }
+  tr.cancelled td { color:#9ca3af; text-decoration:line-through; }
+  tfoot td { font-weight:800; border-top:2px solid #1e293b; background:#f8fafc; }
+  .note { margin-top:14px; font-size:10px; color:#6b7280; line-height:1.7; }
+  @media print { body { margin:12mm; } }
+</style></head><body>
+  <div class="head">
+    <div><div class="brand">GuestFollow</div><h1>${esc(title)}</h1></div>
+    <div class="meta">
+      出力日：${today}<br>施設：${esc(facilityName)}／ステータス：${esc(statusLabel)}<br>期間：${esc(rangeLabel)}
+    </div>
+  </div>
+  <div class="cards">
+    <div class="card sales"><div class="l">売上（総額）</div><div class="v">${yen(totalSales)}</div></div>
+    <div class="card fee"><div class="l">OTA手数料</div><div class="v">−${yen(totalFee)}</div></div>
+    <div class="card profit"><div class="l">粗利益（売上−手数料）</div><div class="v">${yen(totalProfit)}</div></div>
+    <div class="card"><div class="l">件数</div><div class="v">${count}件</div></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>施設</th><th>OTA</th><th>チェックイン〜アウト</th><th>予約名</th><th class="c">人数</th>
+      <th class="r">売上</th><th class="r">OTA手数料</th><th class="r">粗利益</th>
+    </tr></thead>
+    <tbody>${rowsHtml || '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:24px;">該当する予約がありません</td></tr>'}</tbody>
+    <tfoot><tr>
+      <td colspan="5">合計（${count}件）</td>
+      <td class="r">${yen(totalSales)}</td><td class="r">−${yen(totalFee)}</td><td class="r">${yen(totalProfit)}</td>
+    </tr></tfoot>
+  </table>
+  <div class="note">
+    ※ 売上＝OTA予約の総額。OTA手数料＝サイトコントローラー（Beds24）から取得した手数料の実額。粗利益＝売上−OTA手数料。<br>
+    ※ 実際の入金額・振込タイミングはOTAにより異なります（Airbnbは粗利益が入金、Booking.comは売上が入金され後日手数料を支払い）。
+  </div>
+  <script>window.onload=function(){window.print();}</script>
+</body></html>`
+}
+
+// 別ウィンドウで開いて印刷ダイアログ（PDF保存）を出す
+function printHtml(html: string) {
+  const w = window.open('', '_blank')
+  if (!w) { alert('ポップアップがブロックされました。ブラウザのポップアップを許可してください。'); return }
+  w.document.open()
+  w.document.write(html)
+  w.document.close()
+}
+
 export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; facilities: Facility[] }) {
   const [facilityFilter, setFacilityFilter] = useState('all')
   const [dateFrom, setDateFrom] = useState(defaultFrom)
   const [dateTo, setDateTo] = useState(defaultTo)
-  const [statusFilter, setStatusFilter] = useState('all') // confirmed | cancelled | all
-  const [dateBasis, setDateBasis] = useState<'checkout' | 'checkin'>('checkout') // 日付フィルタの基準
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [dateBasis, setDateBasis] = useState<DateBasis>('checkout') // 日付フィルタの基準
   const [showInfo, setShowInfo] = useState(false) // 入金の違いポップアップ
   const [showMonth, setShowMonth] = useState(false) // 「月で選択」ポップオーバー
+
+  // 月次レポート出力（施設×月の一覧から1クリックでPDF）
+  // 一覧側の絞り込みとは独立させ、既定値は一覧と同じ「すべて」「チェックアウト日で絞込」
+  const [showMonthly, setShowMonthly] = useState(false)
+  const [monthlyStatus, setMonthlyStatus] = useState<StatusFilter>('all')
+  const [monthlyBasis, setMonthlyBasis] = useState<DateBasis>('checkout')
 
   // 「YYYY-MM」を受け取り、その月の1日〜末日を日付範囲に設定する
   const applyMonth = (month: string) => {
@@ -55,14 +172,13 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
   }
 
   const filtered = useMemo(() => {
-    const dateOf = (b: Booking) => (dateBasis === 'checkout' ? b.checkout_date : b.checkin_date)
+    const dateOf = (b: Booking) => dateOfBy(b, dateBasis)
     let list = [...bookings]
     if (facilityFilter !== 'all') list = list.filter(b => b.facility_id === facilityFilter)
     if (dateFrom) list = list.filter(b => dateOf(b) >= dateFrom)
     if (dateTo) list = list.filter(b => dateOf(b) <= dateTo)
 
-    const norm = (s: string | null) => (s === 'cancelled' ? 'cancelled' : 'confirmed')
-    if (statusFilter !== 'all') list = list.filter(b => norm(b.ota_status) === statusFilter)
+    if (statusFilter !== 'all') list = list.filter(b => normStatus(b.ota_status) === statusFilter)
 
     // フィルタ基準日の昇順（直近の予約が上）
     list.sort((a, b) => (dateOf(a) > dateOf(b) ? 1 : -1))
@@ -76,8 +192,8 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
 
   // 絞り込み条件の見出し（CSV/PDFの副題に使用）
   const facilityName = facilityFilter === 'all' ? 'すべての施設' : (facilities.find(f => f.id === facilityFilter)?.name ?? '施設')
-  const statusLabel = statusFilter === 'all' ? 'すべて' : statusFilter === 'cancelled' ? 'キャンセル' : '予約済'
-  const basisLabel = dateBasis === 'checkout' ? 'チェックアウト日' : 'チェックイン日'
+  const statusLabel = STATUS_LABEL[statusFilter]
+  const basisLabel = BASIS_LABEL[dateBasis]
   const rangeLabel = `${dateFrom || '—'} 〜 ${dateTo || '—'}（${basisLabel}基準）`
 
   // エクスポート用ファイル名：売上_<施設名>_YYYYMM（YYYYMMはフィルタ範囲の終了日から）
@@ -92,8 +208,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
     jstDate()
   const yyyymm = lastDate.slice(0, 7).replace('-', '')
   const facLabel = facilityFilter === 'all' ? '全施設' : (facilities.find(f => f.id === facilityFilter)?.name ?? '施設')
-  // ファイル名に使えない文字を除去
-  const exportBaseName = `売上_${facLabel.replace(/[\\/:*?"<>|]/g, '').trim()}_${yyyymm}`
+  const exportBaseName = `売上_${sanitizeName(facLabel)}_${yyyymm}`
 
   const handleCsv = () => {
     const headers = ['OTA', 'チェックイン日', 'チェックアウト日', '予約名', '人数', '売上', 'OTA手数料', '粗利益', 'ステータス', '施設']
@@ -123,81 +238,77 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
     URL.revokeObjectURL(url)
   }
 
+  // ── 月次レポート：施設×月のマトリクス ───────────────────────────────
+  // 予約が存在する月だけを新しい順に並べる（基準日はモーダル側の選択に従う）
+  const monthlyMatrix = useMemo(() => {
+    const rows = monthlyStatus === 'all'
+      ? bookings
+      : bookings.filter(b => normStatus(b.ota_status) === monthlyStatus)
+
+    // "YYYY-MM" → 施設ID → { 件数, 売上 }
+    const byMonth = new Map<string, Map<string, { count: number; sales: number }>>()
+    for (const b of rows) {
+      const ym = dateOfBy(b, monthlyBasis).slice(0, 7)
+      if (!ym) continue
+      const perFacility = byMonth.get(ym) ?? new Map()
+      const cur = perFacility.get(b.facility_id) ?? { count: 0, sales: 0 }
+      cur.count++
+      cur.sales += salesOf(b)
+      perFacility.set(b.facility_id, cur)
+      byMonth.set(ym, perFacility)
+    }
+
+    return [...byMonth.entries()]
+      .sort((a, b) => (a[0] < b[0] ? 1 : -1))   // 新しい月が上
+      .map(([ym, perFacility]) => ({
+        ym,
+        perFacility,
+        total: [...perFacility.values()].reduce(
+          (acc, v) => ({ count: acc.count + v.count, sales: acc.sales + v.sales }),
+          { count: 0, sales: 0 }
+        ),
+      }))
+  }, [bookings, monthlyStatus, monthlyBasis])
+
+  // 指定の月・施設（null なら全施設）でPDFを出力する
+  const outputMonthly = (ym: string, facilityId: string | null) => {
+    const [y, m] = ym.split('-').map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    const from = `${ym}-01`
+    const to = `${ym}-${String(lastDay).padStart(2, '0')}`
+
+    const rows = bookings
+      .filter(b => !facilityId || b.facility_id === facilityId)
+      .filter(b => {
+        const d = dateOfBy(b, monthlyBasis)
+        return d >= from && d <= to
+      })
+      .filter(b => monthlyStatus === 'all' || normStatus(b.ota_status) === monthlyStatus)
+      .sort((a, b) => (dateOfBy(a, monthlyBasis) > dateOfBy(b, monthlyBasis) ? 1 : -1))
+
+    const facName = facilityId
+      ? (facilities.find(f => f.id === facilityId)?.name ?? '施設')
+      : '全施設'
+
+    printHtml(buildReportHtml({
+      rows,
+      title: `月次売上レポート（${y}年${m}月）`,
+      fileName: `売上_${sanitizeName(facName)}_${ym.replace('-', '')}`,
+      facilityName: facilityId ? facName : 'すべての施設',
+      statusLabel: STATUS_LABEL[monthlyStatus],
+      rangeLabel: `${from} 〜 ${to}（${BASIS_LABEL[monthlyBasis]}基準）`,
+    }))
+  }
+
   const handlePdf = () => {
-    const esc = (s: unknown) =>
-      String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
-    const today = new Date().toLocaleDateString('ja-JP')
-    const rowsHtml = filtered.map(b => `
-      <tr class="${b.ota_status === 'cancelled' ? 'cancelled' : ''}">
-        <td>${esc(b.facilities?.name ?? '—')}</td>
-        <td class="ota">${esc(b.ota_source ?? '手動')}</td>
-        <td>${esc(formatDate(b.checkin_date))} 〜 ${esc(formatDate(b.checkout_date))}</td>
-        <td>${esc(b.guest_name ?? '—')}</td>
-        <td class="c">${esc(b.num_guests)}</td>
-        <td class="r">${yen(salesOf(b))}</td>
-        <td class="r fee">${feeOf(b) ? '−' + yen(feeOf(b)) : '—'}</td>
-        <td class="r profit">${yen(profitOf(b))}</td>
-      </tr>`).join('')
-
-    const html = `<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<title>${esc(exportBaseName)}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Hiragino Sans','Helvetica Neue',Arial,sans-serif; color:#1f2937; margin:32px; font-size:12px; }
-  .head { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1e293b; padding-bottom:12px; margin-bottom:16px; }
-  h1 { font-size:20px; margin:0; color:#1e293b; letter-spacing:.04em; }
-  .brand { font-size:12px; color:#6366f1; font-weight:700; letter-spacing:.1em; margin-bottom:2px; }
-  .meta { text-align:right; font-size:11px; color:#6b7280; line-height:1.7; }
-  .cards { display:flex; gap:12px; margin-bottom:18px; }
-  .card { flex:1; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
-  .card .l { font-size:10px; color:#6b7280; margin-bottom:4px; }
-  .card .v { font-size:18px; font-weight:800; }
-  .card.sales .v { color:#1e293b; } .card.fee .v { color:#b45309; } .card.profit { background:#eef2ff; border-color:#c7d2fe; } .card.profit .v { color:#4338ca; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { padding:7px 8px; border-bottom:1px solid #e5e7eb; text-align:left; }
-  th { background:#f8fafc; font-size:10px; color:#475569; text-transform:none; border-bottom:1.5px solid #cbd5e1; }
-  td.r,th.r { text-align:right; white-space:nowrap; } td.c,th.c { text-align:center; }
-  td.ota { color:#6b7280; } td.fee { color:#b45309; } td.profit { font-weight:700; color:#4338ca; }
-  tr.cancelled td { color:#9ca3af; text-decoration:line-through; }
-  tfoot td { font-weight:800; border-top:2px solid #1e293b; background:#f8fafc; }
-  .note { margin-top:14px; font-size:10px; color:#6b7280; line-height:1.7; }
-  @media print { body { margin:12mm; } }
-</style></head><body>
-  <div class="head">
-    <div><div class="brand">GuestFollow</div><h1>売上レポート</h1></div>
-    <div class="meta">
-      出力日：${today}<br>施設：${esc(facilityName)}／ステータス：${esc(statusLabel)}<br>期間：${esc(rangeLabel)}
-    </div>
-  </div>
-  <div class="cards">
-    <div class="card sales"><div class="l">売上（総額）</div><div class="v">${yen(totalSales)}</div></div>
-    <div class="card fee"><div class="l">OTA手数料</div><div class="v">−${yen(totalFee)}</div></div>
-    <div class="card profit"><div class="l">粗利益（売上−手数料）</div><div class="v">${yen(totalProfit)}</div></div>
-    <div class="card"><div class="l">件数</div><div class="v">${count}件</div></div>
-  </div>
-  <table>
-    <thead><tr>
-      <th>施設</th><th>OTA</th><th>チェックイン〜アウト</th><th>予約名</th><th class="c">人数</th>
-      <th class="r">売上</th><th class="r">OTA手数料</th><th class="r">粗利益</th>
-    </tr></thead>
-    <tbody>${rowsHtml || '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:24px;">該当する予約がありません</td></tr>'}</tbody>
-    <tfoot><tr>
-      <td colspan="5">合計（${count}件）</td>
-      <td class="r">${yen(totalSales)}</td><td class="r">−${yen(totalFee)}</td><td class="r">${yen(totalProfit)}</td>
-    </tr></tfoot>
-  </table>
-  <div class="note">
-    ※ 売上＝OTA予約の総額。OTA手数料＝サイトコントローラー（Beds24）から取得した手数料の実額。粗利益＝売上−OTA手数料。<br>
-    ※ 実際の入金額・振込タイミングはOTAにより異なります（Airbnbは粗利益が入金、Booking.comは売上が入金され後日手数料を支払い）。
-  </div>
-  <script>window.onload=function(){window.print();}</script>
-</body></html>`
-
-    const w = window.open('', '_blank')
-    if (!w) { alert('ポップアップがブロックされました。ブラウザのポップアップを許可してください。'); return }
-    w.document.open()
-    w.document.write(html)
-    w.document.close()
+    printHtml(buildReportHtml({
+      rows: filtered,
+      title: '売上レポート',
+      fileName: exportBaseName,
+      facilityName,
+      statusLabel,
+      rangeLabel,
+    }))
   }
 
   return (
@@ -208,20 +319,12 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
           <h2 className="text-2xl font-bold text-gray-900">売上レポート</h2>
           <p className="text-gray-400 text-sm mt-0.5">施設・時期・予約ステータスで絞り込み</p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handleCsv}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50 transition-colors"
-          >
-            <Download size={15} /> CSV出力
-          </button>
-          <button
-            onClick={handlePdf}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-navy-600 border border-navy-600 rounded-lg px-3 py-2 hover:bg-navy-700 transition-colors"
-          >
-            <FileText size={15} /> PDF出力
-          </button>
-        </div>
+        <button
+          onClick={() => setShowMonthly(true)}
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-white bg-navy-600 border border-navy-600 rounded-lg px-4 py-2 hover:bg-navy-700 transition-colors"
+        >
+          <CalendarRange size={16} /> 月次レポート出力
+        </button>
       </div>
 
       {/* サマリー：売上 / OTA手数料 / 粗利益 / 件数 */}
@@ -282,7 +385,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
         <div className="relative">
           <select
             value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
+            onChange={e => setStatusFilter(e.target.value as StatusFilter)}
             className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 appearance-none focus:outline-none focus:ring-2 focus:ring-navy-300 cursor-pointer"
           >
             <option value="confirmed">予約済</option>
@@ -364,6 +467,22 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
               </div>
             </>
           )}
+        </div>
+
+        {/* 表示中のデータの出力（絞り込み条件の右） */}
+        <div className="flex items-center gap-2 ml-auto">
+          <button
+            onClick={handleCsv}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
+          >
+            <Download size={15} /> CSV出力
+          </button>
+          <button
+            onClick={handlePdf}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
+          >
+            <FileText size={15} /> PDF出力
+          </button>
         </div>
       </div>
 
@@ -464,6 +583,147 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
       <p className="text-xs text-gray-400 leading-relaxed">
         ※ 売上＝サイトコントローラー（Beds24 / Airhost）から同期したOTA予約の総額。OTA手数料＝Beds24が取得した手数料の実額（手動予約・Airhostは0）。粗利益＝売上−OTA手数料。反映には予約一覧の「予約を同期」を実行してください。
       </p>
+
+      {/* 月次レポート出力 */}
+      {showMonthly && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto"
+          onClick={() => setShowMonthly(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-4xl my-8"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* ヘッダー */}
+            <div className="flex items-start justify-between gap-3 px-6 pt-6 pb-4">
+              <div className="flex items-center gap-2">
+                <CalendarRange size={20} className="text-navy-600 shrink-0" />
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900">月次レポート出力</h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    出力したい月と施設のマスをクリックするとPDFが開きます（印刷画面から「PDFに保存」）
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowMonthly(false)} className="text-gray-400 hover:text-gray-600" aria-label="閉じる">
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* 出力条件 */}
+            <div className="px-6 pb-4 flex flex-wrap items-center gap-2 border-b border-gray-100">
+              <Filter size={14} className="text-gray-400 shrink-0" />
+              <div className="relative">
+                <select
+                  value={monthlyStatus}
+                  onChange={e => setMonthlyStatus(e.target.value as StatusFilter)}
+                  className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 appearance-none focus:outline-none focus:ring-2 focus:ring-navy-300 cursor-pointer"
+                  aria-label="出力するステータス"
+                >
+                  <option value="confirmed">予約済</option>
+                  <option value="cancelled">キャンセル</option>
+                  <option value="all">すべて</option>
+                </select>
+                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+              <div className="relative">
+                <select
+                  value={monthlyBasis}
+                  onChange={e => setMonthlyBasis(e.target.value as DateBasis)}
+                  className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-7 py-1.5 appearance-none focus:outline-none focus:ring-2 focus:ring-navy-300 cursor-pointer"
+                  aria-label="月の判定に使う日付"
+                >
+                  <option value="checkout">チェックアウト日で絞込</option>
+                  <option value="checkin">チェックイン日で絞込</option>
+                </select>
+                <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              </div>
+              <span className="text-xs text-gray-400">
+                （{BASIS_LABEL[monthlyBasis]}がその月に含まれる予約を集計します）
+              </span>
+            </div>
+
+            {/* 施設×月のマトリクス */}
+            {monthlyMatrix.length > 0 ? (
+              <div className="px-6 py-4">
+                <div className="overflow-auto max-h-[60vh] border border-gray-200 rounded-xl">
+                  <table className="w-full text-sm border-collapse">
+                    <thead className="sticky top-0 z-10">
+                      <tr className="bg-gray-50">
+                        <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2 border-b border-gray-200 sticky left-0 bg-gray-50 z-20 whitespace-nowrap">
+                          月
+                        </th>
+                        {facilities.map(f => (
+                          <th key={f.id} className="text-right text-xs font-semibold text-gray-500 px-3 py-2 border-b border-gray-200 whitespace-nowrap">
+                            {f.name}
+                          </th>
+                        ))}
+                        <th className="text-right text-xs font-semibold text-navy-700 px-3 py-2 border-b border-gray-200 bg-navy-50 whitespace-nowrap">
+                          全施設
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {monthlyMatrix.map(({ ym, perFacility, total }) => {
+                        const [y, m] = ym.split('-')
+                        return (
+                          <tr key={ym} className="hover:bg-gray-50/60">
+                            <td className="px-3 py-2 border-b border-gray-100 font-medium text-gray-800 sticky left-0 bg-white whitespace-nowrap">
+                              {Number(y)}年{Number(m)}月
+                            </td>
+                            {facilities.map(f => {
+                              const cell = perFacility.get(f.id)
+                              return (
+                                <td key={f.id} className="px-1.5 py-1.5 border-b border-gray-100 text-right">
+                                  {cell ? (
+                                    <button
+                                      onClick={() => outputMonthly(ym, f.id)}
+                                      className="w-full rounded-lg px-2 py-1.5 hover:bg-navy-50 border border-transparent hover:border-navy-200 transition-colors group"
+                                      title={`${Number(y)}年${Number(m)}月 ／ ${f.name} のレポートを出力`}
+                                    >
+                                      <span className="block text-sm font-semibold text-gray-900 group-hover:text-navy-700 whitespace-nowrap">
+                                        {yen(cell.sales)}
+                                      </span>
+                                      <span className="block text-[10px] text-gray-400">{cell.count}件</span>
+                                    </button>
+                                  ) : (
+                                    <span className="block text-gray-300 px-2 py-1.5">—</span>
+                                  )}
+                                </td>
+                              )
+                            })}
+                            <td className="px-1.5 py-1.5 border-b border-gray-100 text-right bg-navy-50/40">
+                              <button
+                                onClick={() => outputMonthly(ym, null)}
+                                className="w-full rounded-lg px-2 py-1.5 hover:bg-navy-100 border border-transparent hover:border-navy-300 transition-colors group"
+                                title={`${Number(y)}年${Number(m)}月 ／ 全施設のレポートを出力`}
+                              >
+                                <span className="block text-sm font-bold text-navy-700 whitespace-nowrap">
+                                  {yen(total.sales)}
+                                </span>
+                                <span className="block text-[10px] text-navy-500">{total.count}件</span>
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="text-xs text-gray-400 mt-3 leading-relaxed">
+                  ※ 金額は各マスの売上（総額）です。予約がある月のみ表示しています。「—」の月・施設は対象の予約がありません。
+                </p>
+              </div>
+            ) : (
+              <div className="px-6 py-12 text-center text-gray-400">
+                <CalendarRange size={40} className="mx-auto mb-3 opacity-30" />
+                <p className="text-sm">対象の予約がありません</p>
+                <p className="text-xs mt-1">ステータスの条件を変えるか、予約一覧の「予約を同期」で金額を反映してください</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 入金の違いポップアップ */}
       {showInfo && (
