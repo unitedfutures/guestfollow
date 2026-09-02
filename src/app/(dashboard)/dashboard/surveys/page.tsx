@@ -1,10 +1,11 @@
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Card } from '@/components/ui/card'
-import { Star, MessageSquare, ClipboardList } from 'lucide-react'
+import { Star, MessageSquare, ClipboardList, Lightbulb } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { getAccountAccess } from '@/lib/auth/roles'
+import type { CustomQuestion } from '@/app/survey/[qr_slug]/survey-form'
 
 const RATING_KEYS = ['overall', 'cleanliness', 'facilities', 'location'] as const
 const RATING_LABELS: Record<string, string> = {
@@ -27,10 +28,20 @@ export default async function SurveysPage() {
 
   const supabase = await createClient()
 
-  const { data: responses } = await supabase
-    .from('survey_responses')
-    .select('*, facilities(name)')
-    .order('created_at', { ascending: false })
+  const [{ data: responses }, { data: facilities }] = await Promise.all([
+    supabase
+      .from('survey_responses')
+      .select('*, facilities(name)')
+      .order('created_at', { ascending: false }),
+    // 独自設問は survey_config に本文がある。回答のキー（q_xxxx）を設問文に戻すために取得する
+    supabase.from('facilities').select('id, survey_config'),
+  ])
+
+  const customQuestionMap = new Map<string, Map<string, CustomQuestion>>()
+  for (const f of facilities ?? []) {
+    const custom = (f.survey_config as { custom?: CustomQuestion[] } | null)?.custom ?? []
+    customQuestionMap.set(f.id, new Map(custom.map(q => [q.id, q])))
+  }
 
   return (
     <div className="p-8">
@@ -55,6 +66,9 @@ export default async function SurveysPage() {
               const answers = r.answers as Record<string, number | string>
               const ratingEntries = RATING_KEYS.filter(k => typeof answers[k] === 'number')
               const comment = answers['comment'] as string | undefined
+              // ☆4以下のときに別画面でヒアリングした改善要望（answers内に保存される）
+              const improvement = answers['improvement'] as string | undefined
+              const questions = customQuestionMap.get(r.facility_id) ?? new Map<string, CustomQuestion>()
 
               return (
                 <Card key={r.id} className="hover:shadow-sm transition-shadow">
@@ -79,10 +93,10 @@ export default async function SurveysPage() {
                       )}
                     </div>
 
-                    {/* 各項目の評価 */}
-                    {ratingEntries.length > 1 && (
+                    {/* 各項目の評価（設問が総合のみでも「再利用」は表示する） */}
+                    {(ratingEntries.length > 1 || typeof answers['revisit'] === 'string') && (
                       <div className="flex flex-wrap gap-x-4 gap-y-1">
-                        {ratingEntries.map(k => (
+                        {ratingEntries.length > 1 && ratingEntries.map(k => (
                           <div key={k} className="flex items-center gap-1 text-xs text-gray-500">
                             <span>{RATING_LABELS[k]}:</span>
                             <Stars value={answers[k] as number} />
@@ -108,14 +122,36 @@ export default async function SurveysPage() {
                       </div>
                     )}
 
-                    {/* カスタム回答 */}
-                    {Object.entries(answers)
-                      .filter(([k]) => k.startsWith('q_'))
-                      .map(([k, v]) => (
-                        <div key={k} className="text-xs text-gray-500 bg-gray-50 rounded px-3 py-1.5">
-                          <span className="text-gray-400">Q: </span>{k} → {String(v)}
+                    {/* 改善要望（☆4以下の回答者にヒアリングしたもの） */}
+                    {improvement && (
+                      <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                        <Lightbulb size={13} className="text-amber-500 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-xs font-semibold text-amber-700 mb-0.5">改善のご要望</p>
+                          <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{improvement}</p>
                         </div>
-                      ))
+                      </div>
+                    )}
+
+                    {/* 独自設問の回答（設問文は施設のアンケート設定から復元する） */}
+                    {Object.entries(answers)
+                      .filter(([k, v]) => k.startsWith('q_') && v !== null && v !== '')
+                      .map(([k, v]) => {
+                        const q = questions.get(k)
+                        return (
+                          <div key={k} className="text-xs text-gray-600 bg-gray-50 rounded px-3 py-1.5">
+                            <span className="text-gray-400">Q. </span>
+                            {q?.text ?? '（削除された設問）'}
+                            <span className="text-gray-400"> → </span>
+                            {q?.type === 'rating' || typeof v === 'number'
+                              ? <Stars value={Number(v)} />
+                              : <span className="font-medium">
+                                  {v === 'yes' ? 'はい' : v === 'no' ? 'いいえ' : String(v)}
+                                </span>
+                            }
+                          </div>
+                        )
+                      })
                     }
                   </div>
                 </Card>

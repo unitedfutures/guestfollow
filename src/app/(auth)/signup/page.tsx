@@ -7,13 +7,41 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+// 外部サイトへ飛ばされないよう、自サイト内の絶対パスだけを遷移先として許可する
+function safeRedirect(value: string | null): string {
+  if (!value || !/^\/(?![/\\@.])[^\s]*$/.test(value)) return '/dashboard'
+  return value
+}
+
+// Supabaseのエラーは英語で返るため、よくあるものは日本語に置き換える
+function signupErrorMessage(code: string, message: string): string {
+  switch (code) {
+    case 'user_already_exists':
+    case 'email_exists':
+      return 'このメールアドレスは既に登録されています。ログインするか、パスワード再設定をお試しください。'
+    case 'weak_password':
+      return 'パスワードが簡単すぎます。8文字以上で、英字と数字を組み合わせてください。'
+    case 'email_address_invalid':
+    case 'validation_failed':
+      return 'メールアドレスの形式が正しくありません。'
+    case 'over_email_send_rate_limit':
+    case 'over_request_rate_limit':
+      return '試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。'
+    case 'signup_disabled':
+      return '現在、新規登録を受け付けていません。お手数ですがお問い合わせください。'
+    default:
+      return `登録に失敗しました（${message}）`
+  }
+}
+
 function SignupForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') || '/dashboard'
+  const redirect = safeRedirect(searchParams.get('redirect'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [companyName, setCompanyName] = useState('')
+  const [agreed, setAgreed] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
@@ -34,7 +62,7 @@ function SignupForm() {
     })
 
     if (error) {
-      setError(error.message)
+      setError(signupErrorMessage(error.code ?? '', error.message))
       setLoading(false)
       return
     }
@@ -102,11 +130,27 @@ function SignupForm() {
               required
             />
 
+            {/* 規約への同意（同意しないと登録できない） */}
+            <label className="flex items-start gap-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                className="mt-0.5 rounded border-gray-300 text-navy-500"
+                checked={agreed}
+                onChange={(e) => setAgreed(e.target.checked)}
+              />
+              <span className="text-xs text-gray-600 leading-relaxed">
+                <Link href="/privacy" target="_blank" className="text-navy-500 hover:underline">プライバシーポリシー</Link>
+                {' '}および{' '}
+                <Link href="/tokusho" target="_blank" className="text-navy-500 hover:underline">特定商取引法に基づく表記</Link>
+                {' '}に同意します
+              </span>
+            </label>
+
             {error && (
               <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>
             )}
 
-            <Button type="submit" className="w-full" size="lg" loading={loading}>
+            <Button type="submit" className="w-full" size="lg" loading={loading} disabled={!agreed}>
               登録する
             </Button>
           </form>

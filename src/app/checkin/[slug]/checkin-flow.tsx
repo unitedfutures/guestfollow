@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useRef, useCallback } from 'react'
+import { useState, useRef, useCallback, useEffect } from 'react'
 import { startAuthentication } from '@simplewebauthn/browser'
 import { CheckCircle, AlertCircle, ChevronRight, ShieldCheck, Fingerprint, Camera, RotateCcw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -51,6 +51,14 @@ export function CheckinFlow({ facility }: { facility: Facility }) {
     streamRef.current?.getTracks().forEach(t => t.stop())
     streamRef.current = null
     setCameraReady(false)
+  }, [])
+
+  // 画面を離れた・タブを閉じたときにカメラを確実に停止する（撮影せずに離脱するとLEDが点いたままになる）
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach(t => t.stop())
+      streamRef.current = null
+    }
   }, [])
 
   const capturePhoto = useCallback(() => {
@@ -299,6 +307,8 @@ export function CheckinFlow({ facility }: { facility: Facility }) {
             <AlertCircle size={52} className="text-red-400 mx-auto mb-4" />
             <h2 className="text-white text-lg font-bold mb-2">{t('ci_error_title')}</h2>
             <p className="text-gray-400 text-sm mb-4">{errorMsg}</p>
+            {/* パスキーが使えないゲストの逃げ道を必ず案内する */}
+            <p className="text-gray-300 text-xs mb-4 leading-relaxed">{t('ci_error_help')}</p>
             {facility.emergency_contact && (
               <div className="bg-gray-700 rounded-xl px-4 py-3 text-sm mb-4">
                 <p className="text-gray-400 text-xs">{t('ci_contact')}</p>

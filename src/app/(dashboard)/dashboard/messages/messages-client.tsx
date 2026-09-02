@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import Link from 'next/link'
 import {
   MessageSquare, RefreshCw, Send, Search, ChevronLeft,
@@ -75,6 +75,14 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [sendError, setSendError] = useState('')
+
+  // スレッドは古い順に並べるため、表示・送信のたびに最下部（最新）へスクロールする
+  // ※ ページ全体を動かさないよう、スレッド領域だけをスクロールさせる
+  const threadBoxRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const box = threadBoxRef.current
+    if (box) box.scrollTop = box.scrollHeight
+  }, [thread])
 
   const bookingMap = useMemo(() => {
     const m = new Map<string, Booking>()
@@ -220,7 +228,7 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
               </span>
             )}
           </h2>
-          <p className="text-gray-400 text-sm mt-0.5">Beds24・Airhostのゲストメッセージ</p>
+          <p className="text-gray-400 text-sm mt-0.5">Beds24のゲストメッセージ（Airhostは未対応）</p>
         </div>
         <div className="flex flex-col items-end gap-1.5">
           <button
@@ -328,8 +336,34 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
                 </div>
               </div>
 
-              {/* 送信欄（最上部） */}
-              <div className="border-b border-gray-100 p-3">
+              {/* メッセージ本文（古い順：下が最新） */}
+              <div ref={threadBoxRef} className="flex-1 overflow-y-auto p-5 space-y-3 bg-gray-50/50 max-h-[60vh]">
+                {threadLoading ? (
+                  <div className="flex justify-center py-10">
+                    <div className="w-6 h-6 border-2 border-navy-400 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : threadError ? (
+                  <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{threadError}</p>
+                ) : thread.length > 0 ? thread.map(m => (
+                  <div key={m.id} className={`flex ${m.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                      m.direction === 'outgoing'
+                        ? 'bg-navy-600 text-white rounded-br-sm'
+                        : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
+                    }`}>
+                      <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
+                      <p className={`text-[10px] mt-1 ${m.direction === 'outgoing' ? 'text-navy-200' : 'text-gray-400'}`}>
+                        {new Date(m.sent_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                  </div>
+                )) : (
+                  <p className="text-center text-sm text-gray-400 py-10">まだメッセージがありません</p>
+                )}
+              </div>
+
+              {/* 送信欄（最下部） */}
+              <div className="border-t border-gray-100 p-3">
                 {canSend ? (
                   <>
                     <div className="flex items-end gap-2">
@@ -371,31 +405,6 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
                 )}
               </div>
 
-              {/* メッセージ本文（新しい順：上が最新・下が古い） */}
-              <div className="flex-1 overflow-y-auto p-5 space-y-3 bg-gray-50/50">
-                {threadLoading ? (
-                  <div className="flex justify-center py-10">
-                    <div className="w-6 h-6 border-2 border-navy-400 border-t-transparent rounded-full animate-spin" />
-                  </div>
-                ) : threadError ? (
-                  <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{threadError}</p>
-                ) : thread.length > 0 ? [...thread].reverse().map(m => (
-                  <div key={m.id} className={`flex ${m.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-                      m.direction === 'outgoing'
-                        ? 'bg-navy-600 text-white rounded-br-sm'
-                        : 'bg-white border border-gray-200 text-gray-800 rounded-bl-sm'
-                    }`}>
-                      <p className="text-sm whitespace-pre-wrap break-words">{m.body}</p>
-                      <p className={`text-[10px] mt-1 ${m.direction === 'outgoing' ? 'text-navy-200' : 'text-gray-400'}`}>
-                        {new Date(m.sent_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-                )) : (
-                  <p className="text-center text-sm text-gray-400 py-10">まだメッセージがありません</p>
-                )}
-              </div>
             </>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-gray-300 p-8">

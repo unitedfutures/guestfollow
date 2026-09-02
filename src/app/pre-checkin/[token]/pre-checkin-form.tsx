@@ -13,13 +13,14 @@ interface Props {
   defaultEmail: string
   defaultName: string
   numGuests: number
+  maxGuests?: number
   formConfig?: Record<string, string>
 }
 
 type Step = 'basic' | 'passport' | 'terms' | 'passkey' | 'done'
 type Level = 'required' | 'optional' | 'off'
 
-export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, formConfig = {} }: Props) {
+export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, maxGuests = 10, formConfig = {} }: Props) {
   const { t } = useGuestLang()
   // form_config のヘルパー
   const cfg = (key: string): Level => (formConfig[key] as Level) ?? 'required'
@@ -39,7 +40,7 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
     email: defaultEmail,
     phone: '',
     address: '',
-    num_guests: numGuests,
+    num_guests: Math.min(numGuests || 1, maxGuests),
     is_foreign: false,
   })
 
@@ -161,6 +162,8 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
 
   // --- パスキー設定画面 ---
   if (step === 'passkey') {
+    // 施設設定で「任意」の場合はスキップできる（register 側と同じ扱い）
+    const passkeyOptional = formConfig['passkey'] === 'optional'
     return (
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 text-center space-y-5">
@@ -175,6 +178,14 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
           <Button className="w-full" size="lg" loading={loading} onClick={handlePasskeyRegister}>
             {t('passkey_button')}
           </Button>
+          {passkeyOptional && (
+            <button
+              onClick={() => setStep('done')}
+              className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
+            >
+              {t('passkey_skip')}
+            </button>
+          )}
         </div>
       </div>
     )
@@ -237,8 +248,12 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
                 <select
                   className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   value={basic.num_guests} onChange={e => setB('num_guests', parseInt(e.target.value))}>
-                  {[1,2,3,4,5,6,7,8,9,10].map(n => <option key={n} value={n}>{t('guests_n', { n })}</option>)}
+                  {/* 選択肢の上限は施設設定の最大宿泊人数に合わせる */}
+                  {Array.from({ length: maxGuests }, (_, i) => i + 1).map(n => (
+                    <option key={n} value={n}>{t('guests_n', { n })}</option>
+                  ))}
                 </select>
+                <p className="text-xs text-gray-400 mt-1">{t('max_guests_note', { n: maxGuests })}</p>
               </div>
             )}
 

@@ -1,19 +1,24 @@
 'use client'
 
 import { useState } from 'react'
-import { QrCode, RefreshCw, Info, KeyRound, CheckCircle, Camera } from 'lucide-react'
+import { QrCode, Info, KeyRound, CheckCircle, Camera } from 'lucide-react'
 import { PreCheckinUrlDisplay } from './pre-checkin-url-generator'
 import { FacilityQR } from './facility-qr'
 import { Beds24SyncButton } from './beds24-sync-button'
 import { AirhostSyncButton } from './airhost-sync-button'
+import { FacilityEditForm } from './facility-edit-form'
 
 interface Props {
   facility: {
     id: string
     name: string
     qr_slug: string
+    address?: string | null
     beds24_property_id?: string | null
     airhost_property_id?: string | null
+    remote_lock_device_id?: string | null
+    emergency_contact?: string | null
+    checkin_instructions?: string | null
     pin_code?: string | null
     camera_checkin?: boolean | null
   }
@@ -102,6 +107,11 @@ export function FacilityBasicInfo({ facility, appUrl }: Props) {
       {open && (
         <div className="p-4 space-y-4 bg-white">
 
+          {/* 施設情報の編集 */}
+          <FacilityEditForm facility={facility} />
+
+          <div className="border-t border-gray-100" />
+
           {/* 事前登録URL */}
           <div>
             <PreCheckinUrlDisplay qrSlug={facility.qr_slug} appUrl={appUrl} />
@@ -123,25 +133,11 @@ export function FacilityBasicInfo({ facility, appUrl }: Props) {
               <span className="font-mono truncate">{facility.qr_slug}</span>
             </div>
 
-            {/* OTA連携情報 */}
+            {/* OTA連携情報（IDの表示・変更は上部の「施設情報の編集」で行う） */}
             {(facility.beds24_property_id || facility.airhost_property_id) && (
-              <div className="space-y-1.5 mt-1">
-                <p className="text-xs text-gray-400">
-                  予約情報の照合に使用します。ゲストの事前登録情報と突合し、未登録・不一致をアラートします。
-                </p>
-                {facility.beds24_property_id && (
-                  <div className="flex items-center gap-2 text-xs text-blue-600 bg-blue-50 rounded-lg px-3 py-2">
-                    <RefreshCw size={13} />
-                    <span>Beds24 ID: {facility.beds24_property_id}</span>
-                  </div>
-                )}
-                {facility.airhost_property_id && (
-                  <div className="flex items-center gap-2 text-xs text-purple-600 bg-purple-50 rounded-lg px-3 py-2">
-                    <RefreshCw size={13} />
-                    <span>Airhost ID: {facility.airhost_property_id}</span>
-                  </div>
-                )}
-              </div>
+              <p className="text-xs text-gray-400 mt-1">
+                予約情報の照合に使用します。ゲストの事前登録情報と突合し、未登録・不一致をアラートします。
+              </p>
             )}
 
             <div className="grid grid-cols-2 gap-2 mt-1">

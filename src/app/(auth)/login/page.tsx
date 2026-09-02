@@ -7,10 +7,16 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
+// 外部サイトへ飛ばされないよう、自サイト内の絶対パスだけを遷移先として許可する
+function safeRedirect(value: string | null): string {
+  if (!value || !/^\/(?![/\\@.])[^\s]*$/.test(value)) return '/dashboard'
+  return value
+}
+
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirect = searchParams.get('redirect') || '/dashboard'
+  const redirect = safeRedirect(searchParams.get('redirect'))
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
@@ -25,7 +31,17 @@ function LoginForm() {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
 
     if (error) {
-      setError('メールアドレスまたはパスワードが正しくありません')
+      // 原因によって案内を変える（「確認メール未クリック」をパスワード誤りと表示していた）
+      const code = error.code ?? ''
+      if (code === 'email_not_confirmed') {
+        setError('メールアドレスの確認が完了していません。登録時にお送りした確認メール内のリンクを開いてから、もう一度ログインしてください。')
+      } else if (code === 'over_request_rate_limit' || error.status === 429) {
+        setError('試行回数が上限に達しました。しばらく時間をおいてから再度お試しください。')
+      } else if (code === 'user_banned') {
+        setError('このアカウントは現在利用できません。管理者にお問い合わせください。')
+      } else {
+        setError('メールアドレスまたはパスワードが正しくありません')
+      }
       setLoading(false)
       return
     }

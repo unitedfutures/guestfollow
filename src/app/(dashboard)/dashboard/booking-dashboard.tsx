@@ -417,11 +417,15 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
     }
   }
 
+  // キャンセル予約は一覧・件数・サマリーのすべてから除外する（売上レポートには表示）
+  const activeBookings = useMemo(
+    () => bookings.filter(b => b.ota_status !== 'cancelled'),
+    [bookings]
+  )
+
   // ── フィルタリング ─────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
-    let list = bookings
-      // キャンセル予約は予約一覧から除外（売上レポートには表示）
-      .filter(b => b.ota_status !== 'cancelled')
+    let list = activeBookings
       .map(b => {
         const records = getGuestRecords(b)
         const hasRecord = records.length > 0
@@ -476,12 +480,12 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
     })
 
     return list
-  }, [bookings, facilityFilter, periodFilter, dateFrom, dateTo, statusFilter, searchText, sortAsc, surveyResponses])
+  }, [activeBookings, facilityFilter, periodFilter, dateFrom, dateTo, statusFilter, searchText, sortAsc, surveyResponses])
 
-  // ── サマリー数値 ─────────────────────────────────────────────────────────
-  const todayArrivals = bookings.filter(b => isToday(b.checkin_date)).length
-  const weekArrivals = bookings.filter(b => isThisWeek(b.checkin_date)).length
-  const noRecordUpcoming = bookings.filter(b => {
+  // ── サマリー数値（キャンセルを除いた予約が対象） ──────────────────────────
+  const todayArrivals = activeBookings.filter(b => isToday(b.checkin_date)).length
+  const weekArrivals = activeBookings.filter(b => isThisWeek(b.checkin_date)).length
+  const noRecordUpcoming = activeBookings.filter(b => {
     const records = getGuestRecords(b)
     return isUpcoming(b.checkin_date) && records.length === 0
   }).length
@@ -517,7 +521,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">{cleanerMode ? '清掃予定' : '予約一覧'}</h2>
-          <p className="text-gray-400 text-sm mt-0.5">全 {bookings.length} 件</p>
+          <p className="text-gray-400 text-sm mt-0.5">全 {activeBookings.length} 件（キャンセルを除く）</p>
         </div>
         {!cleanerMode && (
           <div className="flex items-center gap-2">

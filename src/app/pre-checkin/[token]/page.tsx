@@ -12,7 +12,7 @@ export default async function PreCheckinPage({ params }: { params: Promise<{ tok
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('id, status, guest_email, guest_name, num_guests, checkin_date, checkout_date, facilities(name, address, emergency_contact, form_config)')
+    .select('id, status, guest_email, guest_name, num_guests, checkin_date, checkout_date, facilities(name, address, emergency_contact, form_config, max_guests)')
     .eq('pre_checkin_token', token)
     .maybeSingle()
 
@@ -32,7 +32,7 @@ export default async function PreCheckinPage({ params }: { params: Promise<{ tok
     )
   }
 
-  const facility = booking.facilities as unknown as { name: string; address: string; emergency_contact: string; form_config?: Record<string, string> }
+  const facility = booking.facilities as unknown as { name: string; address: string; emergency_contact: string; form_config?: Record<string, string>; max_guests?: number | null }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 to-white py-8 px-4">
@@ -64,6 +64,7 @@ export default async function PreCheckinPage({ params }: { params: Promise<{ tok
             defaultEmail={booking.guest_email ?? ''}
             defaultName={booking.guest_name ?? ''}
             numGuests={booking.num_guests}
+            maxGuests={facility.max_guests ?? 10}
             formConfig={facility.form_config ?? {}}
           />
 
