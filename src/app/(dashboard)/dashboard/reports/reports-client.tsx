@@ -3,7 +3,7 @@
 import { useState, useMemo } from 'react'
 import { Filter, ChevronDown, CalendarDays, CalendarRange, XCircle, TrendingUp, Download, FileText, Info, X } from 'lucide-react'
 import { formatDate, formatYen as yen, jstDate } from '@/lib/utils'
-import { ChannelBadge } from '@/components/dashboard/channel-badge'
+import { ChannelBadge, channelLabel } from '@/components/dashboard/channel-badge'
 import { OtaBadge } from '@/components/dashboard/ota-badge'
 
 type Booking = {
@@ -44,6 +44,10 @@ const BASIS_LABEL: Record<DateBasis, string> = {
 }
 
 const dateOfBy = (b: Booking, basis: DateBasis) => (basis === 'checkout' ? b.checkout_date : b.checkin_date)
+
+// レポートの「OTA」欄はAirbnb・Booking.comなどの予約元を表示する
+// （Beds24 / Airhost はサイトコントローラーであってOTAではない）
+const otaLabelOf = (b: Booking) => channelLabel(b.ota_channel) ?? (b.ota_source ? '不明' : '手動')
 const normStatus = (s: string | null) => (s === 'cancelled' ? 'cancelled' : 'confirmed')
 
 // ファイル名に使えない文字を除去
@@ -71,7 +75,7 @@ function buildReportHtml(opts: {
   const rowsHtml = rows.map(b => `
       <tr class="${b.ota_status === 'cancelled' ? 'cancelled' : ''}">
         <td>${esc(b.facilities?.name ?? '—')}</td>
-        <td class="ota">${esc(b.ota_source ?? '手動')}</td>
+        <td class="ota">${esc(otaLabelOf(b))}</td>
         <td>${esc(formatDate(b.checkin_date))} 〜 ${esc(formatDate(b.checkout_date))}</td>
         <td>${esc(b.guest_name ?? '—')}</td>
         <td class="c">${esc(b.num_guests)}</td>
@@ -211,8 +215,10 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
   const exportBaseName = `売上_${sanitizeName(facLabel)}_${yyyymm}`
 
   const handleCsv = () => {
-    const headers = ['OTA', 'チェックイン日', 'チェックアウト日', '予約名', '人数', '売上', 'OTA手数料', '粗利益', 'ステータス', '施設']
+    // 「OTA」は予約元（Airbnb等）。サイトコントローラーは「連携元」として別列に残す
+    const headers = ['OTA', '連携元', 'チェックイン日', 'チェックアウト日', '予約名', '人数', '売上', 'OTA手数料', '粗利益', 'ステータス', '施設']
     const rows = filtered.map(b => [
+      otaLabelOf(b),
       b.ota_source ?? '手動',
       b.checkin_date,
       b.checkout_date,
@@ -225,7 +231,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
       b.facilities?.name ?? '',
     ].map(v => `"${String(v).replace(/"/g, '""')}"`))
     // 合計行
-    rows.push(['合計', '', '', '', String(count), String(totalSales), String(totalFee), String(totalProfit), '', '']
+    rows.push(['合計', '', '', '', '', String(count), String(totalSales), String(totalFee), String(totalProfit), '', '']
       .map(v => `"${v}"`))
     const bom = '﻿'
     const csv = bom + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')

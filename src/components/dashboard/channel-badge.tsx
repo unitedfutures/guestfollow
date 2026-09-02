@@ -12,6 +12,12 @@ const CHANNEL_STYLES: { match: RegExp; label: string; className: string }[] = [
   { match: /direct|直接|website|自社/i, label: '直接予約',      className: 'text-gray-600 bg-gray-50 border-gray-200' },
 ]
 
+/** OTA名の表示ラベル（Airbnb / Booking.com など）。未設定なら null */
+export function channelLabel(channel: string | null): string | null {
+  if (!channel) return null
+  return CHANNEL_STYLES.find(s => s.match.test(channel))?.label ?? channel
+}
+
 export function ChannelBadge({ channel }: { channel: string | null }) {
   if (!channel) return null
   const hit = CHANNEL_STYLES.find(s => s.match.test(channel))
