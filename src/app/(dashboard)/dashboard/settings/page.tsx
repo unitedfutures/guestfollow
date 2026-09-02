@@ -6,6 +6,7 @@ import { SettingsForm } from './settings-form'
 import { OtaAccountsManager } from './ota-accounts-manager'
 import { CleaningStaffManager } from './cleaning-staff-manager'
 import { getAccountAccess } from '@/lib/auth/roles'
+import { CLEANING_STAFF_SELECT, withAccountStatus, type CleaningStaffRow } from '@/lib/cleaning/staff'
 
 export default async function SettingsPage() {
   const { isCleanerOnly } = await getAccountAccess()
@@ -13,35 +14,46 @@ export default async function SettingsPage() {
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
+  // ここに来る時点で middleware と getAccountAccess を通っているが、
+  // 型と実行時の両方で未ログインを排除しておく
+  if (!user) redirect('/login')
 
-  const [{ data: profile }, { data: otaAccounts }, { data: facilities }] = await Promise.all([
+  const [{ data: profile }, { data: otaAccounts }, { data: facilities }, { data: staffRows }] = await Promise.all([
     supabase
       .from('profiles')
       .select('company_name')
-      .eq('id', user!.id)
+      .eq('id', user.id)
       .single(),
     supabase
       .from('ota_accounts')
       .select('id, provider, label, created_at, api_key, refresh_token')
-      .eq('user_id', user!.id)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: true }),
     // 清掃担当者の招待先として選ぶため、自分がオーナーの施設を渡す
     supabase
       .from('facilities')
       .select('id, name')
-      .eq('user_id', user!.id)
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true }),
+    supabase
+      .from('cleaning_staff')
+      .select(CLEANING_STAFF_SELECT)
+      .eq('user_id', user.id)
       .order('created_at', { ascending: true }),
   ])
+
+  // アカウントの有無まで含めてサーバー側で確定させ、クライアントでの再取得をなくす
+  const cleaningStaff = await withAccountStatus((staffRows ?? []) as CleaningStaffRow[], user.id)
 
   // 既存ユーザー救済：profiles.company_name が空でも、サインアップ時に入力した
   // 会社名（auth メタデータ）が残っていれば profiles に補完して表示する。
   let companyName = profile?.company_name ?? ''
-  const metaCompanyName = (user?.user_metadata?.company_name as string | undefined)?.trim()
+  const metaCompanyName = (user.user_metadata?.company_name as string | undefined)?.trim()
   if (!companyName && metaCompanyName) {
     await supabase
       .from('profiles')
       .update({ company_name: metaCompanyName, updated_at: new Date().toISOString() })
-      .eq('id', user!.id)
+      .eq('id', user.id)
     companyName = metaCompanyName
   }
 
@@ -69,7 +81,7 @@ export default async function SettingsPage() {
           }))}
         />
 
-        <CleaningStaffManager facilities={facilities ?? []} />
+        <CleaningStaffManager initialStaff={cleaningStaff} facilities={facilities ?? []} />
 
         <Card>
           <CardHeader>

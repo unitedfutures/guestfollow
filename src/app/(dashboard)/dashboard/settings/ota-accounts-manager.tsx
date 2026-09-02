@@ -4,7 +4,6 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Plus, Trash2, Eye, EyeOff, Link2, ChevronDown, MessageSquare, KeyRound, CheckCircle2, X, RefreshCw } from 'lucide-react'
 
 type OtaAccount = {

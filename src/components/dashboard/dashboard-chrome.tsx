@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
@@ -41,9 +41,6 @@ export function DashboardChrome({
 
   const items = cleanerOnly ? cleanerNavItems : navItems
 
-  // ルート変更時にモバイルドロワーを閉じる
-  useEffect(() => { setMobileOpen(false) }, [pathname])
-
   const handleLogout = async () => {
     const supabase = createClient()
     await supabase.auth.signOut()
@@ -75,6 +72,8 @@ export function DashboardChrome({
             <Link
               key={href}
               href={href}
+              // モバイルドロワーは遷移したら閉じる
+              onClick={() => setMobileOpen(false)}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                 active

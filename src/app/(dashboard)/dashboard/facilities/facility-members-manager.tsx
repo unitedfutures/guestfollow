@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Users, UserPlus, Copy, Check, Trash2, ChevronRight, Clock, Loader2 } from 'lucide-react'
 
 type Role = 'manager' | 'cleaner'
@@ -83,9 +83,12 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
     }
   }, [facilityId, canManage])
 
-  useEffect(() => {
-    if (open) fetchData()
-  }, [open, fetchData])
+  // 開いたタイミングで読み込む（effect ではなく操作の中で取得する）
+  const toggleOpen = () => {
+    const next = !open
+    setOpen(next)
+    if (next) fetchData()
+  }
 
   const handleInvite = async () => {
     if (!inviteEmail.trim()) return
@@ -168,7 +171,7 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
     <div className="border border-gray-200 rounded-xl overflow-hidden">
       {/* トグルヘッダー */}
       <button
-        onClick={() => setOpen(o => !o)}
+        onClick={toggleOpen}
         className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
       >
         <div className="flex items-center gap-2">

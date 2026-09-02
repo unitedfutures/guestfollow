@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useSyncExternalStore, ReactNode } from 'react'
 import { Globe } from 'lucide-react'
 import { GUEST_LANGS, GuestLang, detectGuestLang, guestT } from './guest'
 
@@ -12,16 +12,45 @@ type Ctx = {
 
 const GuestLangContext = createContext<Ctx | null>(null)
 
-export function GuestLangProvider({ children }: { children: ReactNode }) {
-  const [lang, setLangState] = useState<GuestLang>('ja')
+// 表示言語は localStorage / ブラウザ設定という「React外の状態」なので
+// useSyncExternalStore で購読する（effect で setState するとレンダリングが連鎖する）
+const STORAGE_KEY = 'checkinn-guest-lang'
+const listeners = new Set<() => void>()
+// localStorage が使えないブラウザ（プライベートモード等）でも切替が効くよう、
+// この画面で選ばれた言語はメモリにも保持する
+let selected: GuestLang | null = null
 
-  useEffect(() => {
-    setLangState(detectGuestLang())
-  }, [])
+function subscribe(onChange: () => void) {
+  listeners.add(onChange)
+  // 別タブで言語を変えた場合にも追従する
+  window.addEventListener('storage', onChange)
+  return () => {
+    listeners.delete(onChange)
+    window.removeEventListener('storage', onChange)
+  }
+}
+
+function getSnapshot(): GuestLang {
+  if (selected) return selected
+  try {
+    return detectGuestLang()
+  } catch {
+    return 'ja'
+  }
+}
+
+// サーバー描画時は常に日本語（クライアントで検出結果に切り替わる）
+function getServerSnapshot(): GuestLang {
+  return 'ja'
+}
+
+export function GuestLangProvider({ children }: { children: ReactNode }) {
+  const lang = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 
   const setLang = (l: GuestLang) => {
-    setLangState(l)
-    try { window.localStorage.setItem('checkinn-guest-lang', l) } catch { /* noop */ }
+    selected = l
+    try { window.localStorage.setItem(STORAGE_KEY, l) } catch { /* noop */ }
+    listeners.forEach(fn => fn())
   }
 
   const t = (key: string, vars?: Record<string, string | number>) => guestT(lang, key, vars)

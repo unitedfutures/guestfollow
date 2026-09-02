@@ -60,7 +60,11 @@ export async function POST(request: Request) {
       apiKey
     )
   } catch (e) {
-    return NextResponse.json({ error: 'Airhostとの通信に失敗しました。APIキーを確認してください。' }, { status: 502 })
+    // 原因が分かるよう詳細も返す（Beds24側の同期と同じ扱い）
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json({
+      error: `Airhostとの通信に失敗しました。APIキーを確認してください（${msg}）`,
+    }, { status: 502 })
   }
 
   let synced = 0

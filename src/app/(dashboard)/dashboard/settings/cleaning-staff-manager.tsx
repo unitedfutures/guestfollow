@@ -1,25 +1,15 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import {
   Sparkles, Plus, Trash2, Pencil, X, Check, Copy, Send, Loader2, Clock, UserCheck, UserX,
 } from 'lucide-react'
+import type { AccountStatus, CleaningStaffWithStatus } from '@/lib/cleaning/staff'
 
-type AccountStatus = 'none' | 'invited' | 'active'
-
-type CleaningStaff = {
-  id: string
-  name: string
-  email: string | null
-  active: boolean
-  created_at: string
-  account_status: AccountStatus
-  facilities: string[]   // 招待中／参加中の施設名
-}
-
+type CleaningStaff = CleaningStaffWithStatus
 type Facility = { id: string; name: string }
 
 // アカウントの有無を一目で分けるためのバッジ
@@ -45,10 +35,15 @@ function StatusBadge({ status }: { status: AccountStatus }) {
   )
 }
 
-export function CleaningStaffManager({ facilities }: { facilities: Facility[] }) {
+interface Props {
+  initialStaff: CleaningStaff[]
+  facilities: Facility[]
+}
+
+export function CleaningStaffManager({ initialStaff, facilities }: Props) {
   const router = useRouter()
-  const [staff, setStaff] = useState<CleaningStaff[]>([])
-  const [loading, setLoading] = useState(true)
+  // 一覧はサーバー側で確定済み。追加・更新・削除の結果だけをこの場で反映する
+  const [staff, setStaff] = useState<CleaningStaff[]>(initialStaff)
   const [error, setError] = useState('')
 
   // 追加フォーム
@@ -69,26 +64,6 @@ export function CleaningStaffManager({ facilities }: { facilities: Facility[] })
   const [inviteBusy, setInviteBusy] = useState(false)
   const [inviteUrl, setInviteUrl] = useState('')
   const [copied, setCopied] = useState(false)
-
-  const load = useCallback(async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/cleaning-staff')
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        setError((data as { error?: string }).error ?? '清掃担当者の取得に失敗しました')
-        return
-      }
-      setError('')
-      setStaff(Array.isArray(data) ? data : [])
-    } catch {
-      setError('通信エラーが発生しました。時間をおいて再度お試しください。')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => { load() }, [load])
 
   const handleAdd = async () => {
     if (!name.trim()) { setError('名前を入力してください'); return }
@@ -186,7 +161,15 @@ export function CleaningStaffManager({ facilities }: { facilities: Facility[] })
         return
       }
       setInviteUrl(data.invite_url)
-      load()
+      setInvitingId(null)
+      // 招待中に切り替える（対象施設名はサーバー側の再取得で確定させる）
+      const facilityName = facilities.find(f => f.id === inviteFacilityId)?.name ?? ''
+      setStaff(prev => prev.map(row =>
+        row.id === s.id
+          ? { ...row, account_status: 'invited', facilities: [...row.facilities, facilityName] }
+          : row
+      ))
+      router.refresh()
     } catch {
       setError('通信エラーが発生しました。時間をおいて再度お試しください。')
     } finally {
@@ -268,11 +251,7 @@ export function CleaningStaffManager({ facilities }: { facilities: Facility[] })
         )}
 
         {/* 一覧 */}
-        {loading ? (
-          <div className="flex items-center justify-center py-6">
-            <Loader2 size={20} className="animate-spin text-gray-400" />
-          </div>
-        ) : staff.length > 0 ? (
+        {staff.length > 0 ? (
           <div className="space-y-2">
             {staff.map(s => (
               <div key={s.id} className="rounded-xl border border-gray-200 bg-white px-4 py-2.5 space-y-2">

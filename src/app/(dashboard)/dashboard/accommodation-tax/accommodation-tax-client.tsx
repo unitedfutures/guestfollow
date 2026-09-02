@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react'
 import { Coins, CalendarDays, ChevronDown, XCircle, Download, FileText, Info, X } from 'lucide-react'
 import { computeTax, isTaxEnabled, type AccommodationTax } from '@/lib/tax/accommodation-tax'
+import { formatYen as yen, jstDate } from '@/lib/utils'
 
 type Facility = { id: string; name: string; accommodation_tax: AccommodationTax | null }
 type Booking = {
@@ -16,14 +17,12 @@ type Booking = {
   room_charge: number | null
 }
 
-const yen = (n: number) => `¥${Math.round(n).toLocaleString('ja-JP')}`
 const dayNum = (s: string) => Math.floor(Date.parse(`${s}T00:00:00Z`) / 86400000)
+// 当月の初日・末日（UTC基準だと月初の深夜0〜9時に前月扱いになるためJSTの暦日から算出）
+const [nowY, nowM] = jstDate().split('-').map(Number)
 const iso = (d: Date) => d.toISOString().split('T')[0]
-
-// 当月の初日・末日
-const now = new Date()
-const monthStart = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)))
-const monthEnd = iso(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0)))
+const monthStart = iso(new Date(Date.UTC(nowY, nowM - 1, 1)))
+const monthEnd = iso(new Date(Date.UTC(nowY, nowM, 0)))
 
 export function AccommodationTaxClient({ facilities, bookings }: { facilities: Facility[]; bookings: Booking[] }) {
   const [dateFrom, setDateFrom] = useState(monthStart)

@@ -2,8 +2,9 @@
 
 import { useState, useMemo } from 'react'
 import { Filter, ChevronDown, CalendarDays, XCircle, TrendingUp, Download, FileText, Info, X } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
+import { formatDate, formatYen as yen, jstDate } from '@/lib/utils'
 import { ChannelBadge } from '@/components/dashboard/channel-badge'
+import { OtaBadge } from '@/components/dashboard/ota-badge'
 
 type Booking = {
   id: string
@@ -22,23 +23,15 @@ type Booking = {
 
 type Facility = { id: string; name: string }
 
-function OtaBadge({ source }: { source: string | null }) {
-  if (source === 'beds24') return <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">Beds24</span>
-  if (source === 'airhost') return <span className="text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded px-1.5 py-0.5">Airhost</span>
-  return <span className="text-[10px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5">手動</span>
-}
-
-const yen = (n: number) => `¥${Math.round(n).toLocaleString('ja-JP')}`
 
 // 売上 / 手数料 / 粗利益 を1予約から算出
 const salesOf = (b: Booking) => b.price ?? 0
 const feeOf = (b: Booking) => b.commission ?? 0
 const profitOf = (b: Booking) => (b.price ?? 0) - (b.commission ?? 0)
 
-// デフォルト日付範囲：本日〜3ヶ月後
-const iso = (d: Date) => d.toISOString().split('T')[0]
-const defaultFrom = iso(new Date())
-const defaultTo = iso(new Date(new Date().setMonth(new Date().getMonth() + 3)))
+// デフォルト日付範囲：本日〜3ヶ月後（UTC基準だと深夜0〜9時に前日始まりになるためJSTで算出）
+const defaultFrom = jstDate()
+const defaultTo = jstDate(new Date(new Date().setMonth(new Date().getMonth() + 3)))
 
 export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; facilities: Facility[] }) {
   const [facilityFilter, setFacilityFilter] = useState('all')
@@ -96,7 +89,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
           return d > mx ? d : mx
         }, '')
       : '') ||
-    iso(new Date())
+    jstDate()
   const yyyymm = lastDate.slice(0, 7).replace('-', '')
   const facLabel = facilityFilter === 'all' ? '全施設' : (facilities.find(f => f.id === facilityFilter)?.name ?? '施設')
   // ファイル名に使えない文字を除去
@@ -345,7 +338,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                 <p className="text-xs font-medium text-gray-600 mb-2">対象の月を選択</p>
                 <input
                   type="month"
-                  defaultValue={(dateTo || dateFrom || iso(new Date())).slice(0, 7)}
+                  defaultValue={(dateTo || dateFrom || jstDate()).slice(0, 7)}
                   onChange={e => applyMonth(e.target.value)}
                   className="block w-full rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-navy-300"
                   aria-label="対象の月"

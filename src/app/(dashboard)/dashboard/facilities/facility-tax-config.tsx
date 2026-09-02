@@ -5,8 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Coins, ChevronDown, Plus, Trash2, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TAX_PRESETS, type AccommodationTax, type TaxTier } from '@/lib/tax/accommodation-tax'
-
-const yen = (n: number) => `¥${Math.round(n).toLocaleString('ja-JP')}`
+import { formatYen as yen } from '@/lib/utils'
 
 export function FacilityTaxConfig({
   facilityId, initial,

@@ -17,13 +17,13 @@ type Rules = {
 type Facility = { id: string; name: string; beds24_property_id: string | null; pricing_rules: Rules | null; has_refresh?: boolean }
 type Room = { roomId: string; name: string; qty: number }
 type DayVal = { price: number | null; minStay: number | null }
+type Month = { y: number; m: number }
 
 const DEFAULT_RULES: Rules = {
   weekday: 12000, saturday: 15000, preHoliday: 15000, floor: 10000,
   minStayDefault: 1, minStayByDow: { '0': 1, '1': 1, '2': 1, '3': 1, '4': 1, '5': 1, '6': 1 },
 }
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
-const yen = (n: number) => `¥${Math.round(n).toLocaleString('ja-JP')}`
 const pad = (n: number) => String(n).padStart(2, '0')
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
 
@@ -48,43 +48,64 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const [savingRules, setSavingRules] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
-  const monthStart = ymd(month.y, month.m, 1)
-  const monthEnd = ymd(month.y, month.m, new Date(month.y, month.m, 0).getDate())
-
-  // 施設変更 → ルール読込＋部屋取得
-  useEffect(() => {
-    if (!facility) return
-    setRules(facility.pricing_rules ?? DEFAULT_RULES)
-    setRooms([]); setRoomId(''); setCal({})
-    setLoadingRooms(true); setMsg(null)
-    fetch(`/api/pricing/rooms?facility_id=${facility.id}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) { setMsg({ type: 'err', text: d.error }); return }
-        setRooms(d.rooms ?? [])
-        setRoomId(d.rooms?.[0]?.roomId ?? '')
-      })
-      .catch(() => setMsg({ type: 'err', text: '部屋情報の取得に失敗しました' }))
-      .finally(() => setLoadingRooms(false))
-  }, [facilityId]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // カレンダー読込（Beds24の現在値）
-  const loadCalendar = useCallback(() => {
-    if (!facility || !roomId) return
+  // 施設・部屋・月を引数で受け取り、操作（施設/部屋の切替・月送り）から直接呼ぶ
+  const loadCalendar = useCallback(async (fid: string, rid: string, m: Month) => {
+    if (!fid || !rid) return
     setLoadingCal(true); setMsg(null)
-    fetch(`/api/pricing/calendar?facility_id=${facility.id}&room_id=${roomId}&start=${monthStart}&end=${monthEnd}`)
-      .then(r => r.json())
-      .then(d => {
-        if (d.error) { setMsg({ type: 'err', text: d.error }); return }
-        const next: Record<string, DayVal> = {}
-        for (const day of d.days ?? []) next[day.date] = { price: day.price ?? null, minStay: day.minStay ?? null }
-        setCal(next)
-      })
-      .catch(() => setMsg({ type: 'err', text: 'カレンダーの取得に失敗しました' }))
-      .finally(() => setLoadingCal(false))
-  }, [facility, roomId, monthStart, monthEnd])
+    const start = ymd(m.y, m.m, 1)
+    const end = ymd(m.y, m.m, new Date(m.y, m.m, 0).getDate())
+    try {
+      const res = await fetch(`/api/pricing/calendar?facility_id=${fid}&room_id=${rid}&start=${start}&end=${end}`)
+      const d = await res.json().catch(() => ({}))
+      if (d.error) { setMsg({ type: 'err', text: d.error }); return }
+      const next: Record<string, DayVal> = {}
+      for (const day of d.days ?? []) next[day.date] = { price: day.price ?? null, minStay: day.minStay ?? null }
+      setCal(next)
+    } catch {
+      setMsg({ type: 'err', text: 'カレンダーの取得に失敗しました' })
+    } finally {
+      setLoadingCal(false)
+    }
+  }, [])
 
-  useEffect(() => { loadCalendar() }, [loadCalendar])
+  // 部屋一覧を取得し、先頭の部屋のカレンダーまで読み込む
+  const loadRooms = useCallback(async (fid: string, m: Month) => {
+    if (!fid) return
+    setLoadingRooms(true); setMsg(null)
+    try {
+      const res = await fetch(`/api/pricing/rooms?facility_id=${fid}`)
+      const d = await res.json().catch(() => ({}))
+      if (d.error) { setMsg({ type: 'err', text: d.error }); setRooms([]); setRoomId(''); return }
+      const list: Room[] = d.rooms ?? []
+      setRooms(list)
+      const first = list[0]?.roomId ?? ''
+      setRoomId(first)
+      if (first) await loadCalendar(fid, first, m)
+    } catch {
+      setMsg({ type: 'err', text: '部屋情報の取得に失敗しました' })
+    } finally {
+      setLoadingRooms(false)
+    }
+  }, [loadCalendar])
+
+  // 初期表示だけは操作の起点がないため effect で外部API（Beds24）を読む
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { loadRooms(facilityId, month) }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 施設を切り替える：ルールを読み直し、部屋とカレンダーを取り直す
+  const selectFacility = (id: string) => {
+    setFacilityId(id)
+    const f = facilities.find(x => x.id === id)
+    setRules(f?.pricing_rules ?? DEFAULT_RULES)
+    setRooms([]); setRoomId(''); setCal({})
+    loadRooms(id, month)
+  }
+
+  const selectRoom = (id: string) => {
+    setRoomId(id)
+    loadCalendar(facilityId, id, month)
+  }
 
   // 月の日付一覧
   const days = useMemo(() => {
@@ -163,7 +184,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setMsg({ type: 'err', text: data.error ?? '反映に失敗しました' }); return }
       setMsg({ type: 'ok', text: `Beds24に ${data.updated} 日分を反映しました。反映がOTAに届くまで数分かかる場合があります。` })
-      loadCalendar()
+      loadCalendar(facilityId, roomId, month)
     } catch {
       setMsg({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
     } finally {
@@ -172,10 +193,10 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   }
 
   const changeMonth = (delta: number) => {
-    setMonth(prev => {
-      const d = new Date(prev.y, prev.m - 1 + delta, 1)
-      return { y: d.getFullYear(), m: d.getMonth() + 1 }
-    })
+    const d = new Date(month.y, month.m - 1 + delta, 1)
+    const next = { y: d.getFullYear(), m: d.getMonth() + 1 }
+    setMonth(next)
+    loadCalendar(facilityId, roomId, next)
   }
 
   if (facilities.length === 0) {
@@ -201,7 +222,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       {/* 施設・部屋選択 */}
       <div className="bg-white border border-gray-200 rounded-xl p-3 flex flex-wrap items-center gap-2">
         <div className="relative">
-          <select value={facilityId} onChange={e => setFacilityId(e.target.value)}
+          <select value={facilityId} onChange={e => selectFacility(e.target.value)}
             className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-8 py-1.5 appearance-none focus:outline-none focus:ring-2 focus:ring-navy-300 cursor-pointer">
             {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
           </select>
@@ -209,7 +230,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
         </div>
         {rooms.length > 1 && (
           <div className="relative">
-            <select value={roomId} onChange={e => setRoomId(e.target.value)}
+            <select value={roomId} onChange={e => selectRoom(e.target.value)}
               className="text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg pl-3 pr-8 py-1.5 appearance-none focus:outline-none focus:ring-2 focus:ring-navy-300 cursor-pointer">
               {rooms.map(r => <option key={r.roomId} value={r.roomId}>{r.name}</option>)}
             </select>

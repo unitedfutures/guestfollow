@@ -24,6 +24,11 @@ export function jstEndOfDay(dateStr: string): Date {
   return new Date(`${dateStr}T23:59:59+09:00`)
 }
 
+/** 金額表示（¥12,345）。ダッシュボード各画面で共通に使う */
+export function formatYen(n: number): string {
+  return `¥${Math.round(n).toLocaleString('ja-JP')}`
+}
+
 export function formatDate(date: string, locale = 'ja-JP'): string {
   return new Date(date).toLocaleDateString(locale, {
     year: 'numeric',

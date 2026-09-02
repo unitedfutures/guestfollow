@@ -8,6 +8,7 @@ import {
 } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 import { ChannelBadge } from '@/components/dashboard/channel-badge'
+import { OtaBadge } from '@/components/dashboard/ota-badge'
 
 type Message = {
   id: string
@@ -47,12 +48,6 @@ interface Props {
   initialMessages: Message[]
   bookings: Booking[]
   refreshFacilityIds: string[]
-}
-
-function OtaBadge({ source }: { source: string | null }) {
-  if (source === 'beds24') return <span className="text-[10px] font-bold text-blue-600 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5">Beds24</span>
-  if (source === 'airhost') return <span className="text-[10px] font-bold text-purple-600 bg-purple-50 border border-purple-200 rounded px-1.5 py-0.5">Airhost</span>
-  return null
 }
 
 function timeLabel(iso: string) {
@@ -281,7 +276,7 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
                         {b?.guest_name ?? '（名称未取得）'}
                       </span>
                       <ChannelBadge channel={b?.ota_channel ?? null} />
-                      <OtaBadge source={c.last.ota_source} />
+                      <OtaBadge source={c.last.ota_source} showManual={false} />
                     </div>
                     <span className="text-[11px] text-gray-400 shrink-0">{timeLabel(c.last.sent_at)}</span>
                   </div>
@@ -327,7 +322,7 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
                       {selectedBooking.guest_name ?? '（名称未取得）'}
                     </span>
                     <ChannelBadge channel={selectedBooking.ota_channel} />
-                    <OtaBadge source={selectedBooking.ota_source} />
+                    <OtaBadge source={selectedBooking.ota_source} showManual={false} />
                   </div>
                   <p className="text-xs text-gray-400 flex items-center gap-1">
                     <CalendarDays size={10} />
