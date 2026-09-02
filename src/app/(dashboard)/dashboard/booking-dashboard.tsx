@@ -134,22 +134,29 @@ function SyncAllButton() {
   const handleSync = async () => {
     setLoading(true)
     setMessage(null)
-    const res = await fetch('/api/bookings/sync-all', { method: 'POST' })
-    const data = await res.json()
-    if (res.ok) {
-      const errNote = data.errors?.length ? `（一部エラー: ${data.errors.join(' / ')}）` : ''
+    try {
+      const res = await fetch('/api/bookings/sync-all', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMessage({ type: 'error', text: data.error ?? '同期に失敗しました' })
+        return
+      }
+      const hasErrors = Array.isArray(data.errors) && data.errors.length > 0
+      const errNote = hasErrors ? `（一部エラー: ${data.errors.join(' / ')}）` : ''
       setMessage({
-        type: data.errors?.length ? 'error' : 'success',
+        type: hasErrors ? 'error' : 'success',
         text: data.synced > 0
           ? `${data.synced}件の新規予約を取り込みました${errNote}`
           : `新規予約はありません${errNote}`,
       })
       router.refresh()
-    } else {
-      setMessage({ type: 'error', text: data.error ?? '同期に失敗しました' })
+      // 成功時のみ自動で消す（エラーは次の操作まで残す）
+      if (!hasErrors) setTimeout(() => setMessage(null), 8000)
+    } catch {
+      setMessage({ type: 'error', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-    setTimeout(() => setMessage(null), 8000)
   }
 
   return (
@@ -179,6 +186,7 @@ function BookingDetail({ booking, appUrl }: { booking: Booking & { hasRecord: bo
   const [copied, setCopied] = useState(false)
   const [sending, setSending] = useState(false)
   const [sent, setSent] = useState(false)
+  const [resendError, setResendError] = useState('')
 
   // ゲストメッセージ送信
   const [msgBody, setMsgBody] = useState('')
@@ -197,30 +205,46 @@ function BookingDetail({ booking, appUrl }: { booking: Booking & { hasRecord: bo
 
   const handleResend = async () => {
     setSending(true)
-    await fetch(`/api/bookings/${booking.id}/resend`, { method: 'POST' })
-    setSending(false)
-    setSent(true)
-    setTimeout(() => setSent(false), 3000)
+    setResendError('')
+    try {
+      const res = await fetch(`/api/bookings/${booking.id}/resend`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResendError(data.error ?? 'メールの送信に失敗しました')
+        return
+      }
+      setSent(true)
+      setTimeout(() => setSent(false), 3000)
+    } catch {
+      setResendError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setSending(false)
+    }
   }
 
   const handleSendMessage = async () => {
     if (!msgBody.trim()) return
     setMsgSending(true)
     setMsgResult(null)
-    const res = await fetch(`/api/messages/${booking.id}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body: msgBody.trim() }),
-    })
-    const data = await res.json()
-    if (res.ok) {
+    try {
+      const res = await fetch(`/api/messages/${booking.id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: msgBody.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsgResult({ type: 'error', text: data.error ?? '送信に失敗しました' })
+        return
+      }
       setMsgBody('')
       setMsgResult({ type: 'success', text: 'メッセージを送信しました' })
-    } else {
-      setMsgResult({ type: 'error', text: data.error ?? '送信に失敗しました' })
+      setTimeout(() => setMsgResult(null), 6000)
+    } catch {
+      setMsgResult({ type: 'error', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+    } finally {
+      setMsgSending(false)
     }
-    setMsgSending(false)
-    setTimeout(() => setMsgResult(null), 6000)
   }
 
   return (
@@ -262,6 +286,9 @@ function BookingDetail({ booking, appUrl }: { booking: Booking & { hasRecord: bo
               </button>
             )}
           </div>
+          {resendError && (
+            <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{resendError}</p>
+          )}
         </div>
 
         {/* ── 右：登録済み宿泊者情報 ── */}
@@ -359,14 +386,35 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
   const [expandedId, setExpandedId] = useState<string | null>(null)
   // 予約ID → 清掃担当ID のローカル上書き（割り当て変更を即時反映）
   const [cleaningMap, setCleaningMap] = useState<Record<string, string | null>>({})
+  const [cleaningError, setCleaningError] = useState('')
 
   const assignCleaning = async (bookingId: string, staffId: string | null) => {
-    setCleaningMap(prev => ({ ...prev, [bookingId]: staffId }))
-    await fetch(`/api/bookings/${bookingId}/cleaning`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ cleaning_staff_id: staffId }),
+    // 失敗時に戻せるよう、変更前の値を退避
+    const hadEntry = bookingId in cleaningMap
+    const prevValue = cleaningMap[bookingId]
+    const revert = () => setCleaningMap(prev => {
+      const next = { ...prev }
+      if (hadEntry) next[bookingId] = prevValue
+      else delete next[bookingId]
+      return next
     })
+    setCleaningMap(prev => ({ ...prev, [bookingId]: staffId }))
+    setCleaningError('')
+    try {
+      const res = await fetch(`/api/bookings/${bookingId}/cleaning`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cleaning_staff_id: staffId }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        revert()
+        setCleaningError(data.error ?? '清掃担当の割り当てに失敗しました')
+      }
+    } catch {
+      revert()
+      setCleaningError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    }
   }
 
   // ── フィルタリング ─────────────────────────────────────────────────────────
@@ -595,6 +643,10 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
 
         <span className="text-xs text-gray-400">{filtered.length} 件表示</span>
       </div>
+
+      {cleaningError && (
+        <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{cleaningError}</p>
+      )}
 
       {/* ── 予約一覧 ────────────────────────────────────────────────────── */}
       {filtered.length > 0 ? (

@@ -29,6 +29,7 @@ export function RegisterForm({ qrSlug, formConfig, maxGuests = 10 }: Props) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [guestRecordId, setGuestRecordId] = useState('')
+  const [setupToken, setSetupToken] = useState('') // パスキー登録を本人に紐づけるトークン（登録APIが返す）
 
   // Step 1: 宿泊日程
   const today = new Date().toISOString().split('T')[0]
@@ -127,6 +128,7 @@ export function RegisterForm({ qrSlug, formConfig, maxGuests = 10 }: Props) {
     }
 
     setGuestRecordId(data.guest_record_id)
+    setSetupToken(data.passkey_setup_token ?? '')
     setStep('passkey')
   }
 
@@ -137,7 +139,7 @@ export function RegisterForm({ qrSlug, formConfig, maxGuests = 10 }: Props) {
       const optRes = await fetch('/api/passkey/register-options', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_record_id: guestRecordId }),
+        body: JSON.stringify({ guest_record_id: guestRecordId, setup_token: setupToken }),
       })
       const options = await optRes.json()
       if (!optRes.ok) {
@@ -148,7 +150,7 @@ export function RegisterForm({ qrSlug, formConfig, maxGuests = 10 }: Props) {
       const verifyRes = await fetch('/api/passkey/register-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_record_id: guestRecordId, credential }),
+        body: JSON.stringify({ guest_record_id: guestRecordId, credential, setup_token: setupToken }),
       })
       if (!verifyRes.ok) {
         const data = await verifyRes.json()

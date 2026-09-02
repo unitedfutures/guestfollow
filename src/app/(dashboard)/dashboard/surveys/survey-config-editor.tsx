@@ -40,6 +40,7 @@ export function SurveyConfigEditor({ facilityId, currentConfig, qrSlug, appUrl }
   const [config, setConfig] = useState<SurveyConfig>(currentConfig)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [newQ, setNewQ] = useState({ text: '', type: 'rating' as CustomQuestion['type'] })
 
@@ -67,13 +68,26 @@ export function SurveyConfigEditor({ facilityId, currentConfig, qrSlug, appUrl }
 
   const handleSave = async () => {
     setSaving(true)
-    const res = await fetch('/api/survey-config', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ facility_id: facilityId, survey_config: config }),
-    })
-    setSaving(false)
-    if (res.ok) { setSaved(true); setTimeout(() => setSaved(false), 2500); router.refresh() }
+    setError('')
+    try {
+      const res = await fetch('/api/survey-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facility_id: facilityId, survey_config: config }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error ?? '保存に失敗しました')
+        return
+      }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2500)
+      router.refresh()
+    } catch {
+      setError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -213,12 +227,13 @@ export function SurveyConfigEditor({ facilityId, currentConfig, qrSlug, appUrl }
             </div>
           </div>
 
-          <div className="border-t border-gray-100 pt-1">
+          <div className="border-t border-gray-100 pt-1 space-y-2">
             <Button size="sm" className="w-full" loading={saving} onClick={handleSave}>
               {saved
                 ? <><CheckCircle size={13} className="mr-1.5" />保存しました</>
                 : <><Save size={13} className="mr-1.5" />設問を保存する</>}
             </Button>
+            {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
           </div>
         </div>
       )}

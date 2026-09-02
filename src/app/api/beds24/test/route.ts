@@ -7,6 +7,10 @@ import { NextResponse } from 'next/server'
 import { beds24RawFetch } from '@/lib/beds24/client'
 
 export async function GET() {
+  // 診断用エンドポイント：本番では無効化（キー断片や外部APIの生レスポンスを返すため）
+  if (process.env.NODE_ENV === 'production') {
+    return new NextResponse(null, { status: 404 })
+  }
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

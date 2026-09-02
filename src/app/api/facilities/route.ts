@@ -27,8 +27,21 @@ export async function PUT(request: Request) {
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { id, ...fields } = body
+  const { id } = body
   if (!id) return NextResponse.json({ error: 'ID is required' }, { status: 400 })
+
+  // 更新可能なカラムを明示（user_id / qr_slug / 予約トークン等の書き換えを防ぐ）
+  const ALLOWED = [
+    'name', 'address', 'beds24_property_id', 'airhost_property_id', 'remote_lock_device_id',
+    'emergency_contact', 'checkin_instructions', 'pin_code', 'camera_checkin', 'memo',
+    'max_guests', 'form_config', 'survey_config', 'ota_account_id',
+    'accommodation_tax', 'pricing_rules',
+  ] as const
+  const fields: Record<string, unknown> = {}
+  for (const k of ALLOWED) if (k in body) fields[k] = body[k]
+  if (Object.keys(fields).length === 0) {
+    return NextResponse.json({ error: '更新項目がありません' }, { status: 400 })
+  }
 
   const { data, error } = await supabase
     .from('facilities')

@@ -17,6 +17,8 @@
 - `add-guest-country.sql` … 宿泊者国籍（Beds24 の国コード）
 - `add-accommodation-tax.sql` … 宿泊税（施設ルール＋宿泊料 room_charge）
 - `add-pricing-rules.sql` … 宿泊価格の自動プライシングルール
+- `fix-security-hardening.sql` … 【重要・最優先】匿名(anon)キーでの全件参照を廃止・passkey_challenges のRLS有効化・guest_records.passkey_setup_token 追加
+- `fix-sync-integrity.sql` … Airhost予約IDの一意インデックス（同期の二重登録防止。既存重複があれば先に解消）
 
 ## Supabase ダッシュボード設定（手動）
 - Auth → Emails → **Confirm signup** / **Reset Password** に

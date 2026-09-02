@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { getRooms } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
+import { canManage } from '@/lib/auth/can-manage'
 
 // 施設(Beds24物件)の部屋一覧を取得
 export async function GET(request: Request) {
@@ -21,6 +22,9 @@ export async function GET(request: Request) {
   if (!facility) return NextResponse.json({ error: '施設が見つかりません' }, { status: 404 })
   if (!facility.beds24_property_id) {
     return NextResponse.json({ error: 'この施設はBeds24と連携していません' }, { status: 400 })
+  }
+  if (!(await canManage(supabase, facility.id, user.id))) {
+    return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
   }
 
   const { token } = await resolveBeds24Token(supabase, user.id, facility)

@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { updateRoomCalendar } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
+import { canManage } from '@/lib/auth/can-manage'
 
 type DayInput = { date: string; price?: number | null; minStay?: number | null }
 
@@ -22,6 +23,10 @@ export async function POST(request: Request) {
     .eq('id', facility_id)
     .single()
   if (!facility) return NextResponse.json({ error: '施設が見つかりません' }, { status: 404 })
+  // 価格の書き込みはオーナー/現場管理責任者のみ（清掃担当は不可）
+  if (!(await canManage(supabase, facility.id, user.id))) {
+    return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
+  }
 
   const { token, source } = await resolveBeds24Token(supabase, user.id, facility)
   if (!token) return NextResponse.json({ error: 'Beds24のトークンが設定されていません' }, { status: 400 })

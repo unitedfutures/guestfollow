@@ -63,11 +63,12 @@ export async function POST(request: Request) {
   let skipped = 0
 
   for (const b of beds24Bookings) {
+    // 既存判定は0件が正常系なので maybeSingle
     const { data: existing } = await supabase
       .from('bookings')
       .select('id')
       .eq('beds24_booking_id', b.bookId)
-      .single()
+      .maybeSingle()
 
     // 既存予約は金額・OTAステータス・チャネルを更新（キャンセル反映）
     if (existing) {
@@ -86,7 +87,7 @@ export async function POST(request: Request) {
     const guestName = `${b.guestLastName} ${b.guestFirstName}`.trim()
     const numGuests = (b.numAdult || 0) + (b.numChild || 0)
 
-    await supabase.from('bookings').insert({
+    const { error: insErr } = await supabase.from('bookings').insert({
       facility_id,
       user_id:           user.id,
       beds24_booking_id: b.bookId,
@@ -104,6 +105,8 @@ export async function POST(request: Request) {
       guest_country:     b.guestCountry || null,
       ota_status:        b.otaStatus,
     })
+    // 失敗（一意制約違反など）は成功件数に数えない
+    if (insErr) { console.error('[beds24/sync] insert error:', b.bookId, insErr.message); continue }
 
     synced++
   }

@@ -9,6 +9,21 @@ export function generatePin(length = 4): string {
   return Array.from({ length }, () => Math.floor(Math.random() * 10)).join('')
 }
 
+/**
+ * 日本時間(JST)の暦日 "YYYY-MM-DD"。
+ * サーバー(Vercel)はUTCで動くため、toISOString() をそのまま使うと
+ * JSTの 0:00〜8:59 の間は「前日」になってしまう。チェックイン可否など
+ * 日付比較には必ずこちらを使う。
+ */
+export function jstDate(d: Date = new Date()): string {
+  return new Date(d.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(0, 10)
+}
+
+/** 指定日(YYYY-MM-DD)の JST 23:59:59 を表す Date（暗証番号の有効期限などに使用） */
+export function jstEndOfDay(dateStr: string): Date {
+  return new Date(`${dateStr}T23:59:59+09:00`)
+}
+
 export function formatDate(date: string, locale = 'ja-JP'): string {
   return new Date(date).toLocaleDateString(locale, {
     year: 'numeric',

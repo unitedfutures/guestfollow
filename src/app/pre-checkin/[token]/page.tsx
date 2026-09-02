@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { formatDate } from '@/lib/utils'
 import { PreCheckinForm } from './pre-checkin-form'
@@ -7,13 +7,14 @@ import { GuestLangProvider, GuestHeader, GuestText } from '@/lib/i18n/guest-lang
 
 export default async function PreCheckinPage({ params }: { params: Promise<{ token: string }> }) {
   const { token } = await params
-  const supabase = await createClient()
+  // 公開ページ：秘密の pre_checkin_token で絞った1件のみ service role で読む（必要カラムに限定）
+  const supabase = createServiceRoleClient()
 
   const { data: booking } = await supabase
     .from('bookings')
-    .select('*, facilities(name, address, emergency_contact, form_config)')
+    .select('id, status, guest_email, guest_name, num_guests, checkin_date, checkout_date, facilities(name, address, emergency_contact, form_config)')
     .eq('pre_checkin_token', token)
-    .single()
+    .maybeSingle()
 
   if (!booking) notFound()
 

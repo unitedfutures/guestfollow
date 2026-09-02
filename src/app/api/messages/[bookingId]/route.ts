@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { postMessage } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
+import { canManage } from '@/lib/auth/can-manage'
 
 // 予約単位のメッセージ一覧を取得（既読化も実施）
 export async function GET(
@@ -50,6 +51,10 @@ export async function POST(
     .single()
 
   if (!booking) return NextResponse.json({ error: '予約が見つかりません' }, { status: 404 })
+  // 送信はオーナー/現場管理責任者のみ（清掃担当は不可）。Beds24へ送る前に判定する
+  if (!(await canManage(supabase, booking.facility_id, user.id))) {
+    return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
+  }
 
   if (booking.ota_source !== 'beds24' || !booking.beds24_booking_id) {
     return NextResponse.json({

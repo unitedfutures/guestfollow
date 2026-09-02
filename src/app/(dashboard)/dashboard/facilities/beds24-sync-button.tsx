@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 export function Beds24SyncButton({ facilityId }: { facilityId: string }) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
+  const [result, setResult] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
   const handleSync = async () => {
     setLoading(true)
@@ -19,18 +19,19 @@ export function Beds24SyncButton({ facilityId }: { facilityId: string }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ facility_id: facilityId }),
       })
-      const data = await res.json()
-      if (res.ok) {
-        setResult(`${data.synced}件を同期しました`)
-        router.refresh()
-      } else {
-        setResult(data.error || 'エラーが発生しました')
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setResult({ type: 'err', text: data.error || '同期に失敗しました' })
+        return
       }
+      setResult({ type: 'ok', text: `${data.synced}件を同期しました` })
+      router.refresh()
+      setTimeout(() => setResult(null), 4000)
     } catch {
-      setResult('通信エラー')
+      setResult({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
-    setTimeout(() => setResult(null), 4000)
   }
 
   return (
@@ -39,7 +40,9 @@ export function Beds24SyncButton({ facilityId }: { facilityId: string }) {
         <RefreshCw size={14} className="mr-1.5" /> Beds24同期
       </Button>
       {result && (
-        <p className="absolute -bottom-6 left-0 right-0 text-center text-xs text-indigo-600 whitespace-nowrap">{result}</p>
+        <p className={`absolute -bottom-6 left-0 right-0 text-center text-xs whitespace-nowrap ${
+          result.type === 'ok' ? 'text-indigo-600' : 'text-red-600'
+        }`}>{result.text}</p>
       )}
     </div>
   )

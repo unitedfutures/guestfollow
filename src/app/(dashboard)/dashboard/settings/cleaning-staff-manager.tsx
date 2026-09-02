@@ -25,31 +25,45 @@ export function CleaningStaffManager({ initialStaff }: { initialStaff: CleaningS
     if (!name.trim()) { setError('名前を入力してください'); return }
     setAdding(true)
     setError('')
-    const res = await fetch('/api/cleaning-staff', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-    const data = await res.json()
-    if (res.ok) {
+    try {
+      const res = await fetch('/api/cleaning-staff', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error ?? '追加に失敗しました')
+        return
+      }
       setStaff(prev => [...prev, data])
       setName('')
       router.refresh()
-    } else {
-      setError(data.error ?? '追加に失敗しました')
+    } catch {
+      setError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setAdding(false)
     }
-    setAdding(false)
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('この清掃担当者を削除しますか？\n予約への割り当ては解除されます。')) return
     setDeletingId(id)
-    const res = await fetch(`/api/cleaning-staff?id=${id}`, { method: 'DELETE' })
-    if (res.ok) {
+    setError('')
+    try {
+      const res = await fetch(`/api/cleaning-staff?id=${id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error ?? '削除に失敗しました')
+        return
+      }
       setStaff(prev => prev.filter(s => s.id !== id))
       router.refresh()
+    } catch {
+      setError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setDeletingId(null)
     }
-    setDeletingId(null)
   }
 
   return (

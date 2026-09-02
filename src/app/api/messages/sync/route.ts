@@ -9,12 +9,17 @@ export async function POST() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Beds24予約のみ対象（beds24_booking_id あり）
+  // Beds24予約のみ対象（beds24_booking_id あり）。
+  // 予約1件ごとにBeds24へ問い合わせるため、対象を「チェックアウトが30日前以降」に絞り、上限も設ける
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
   const { data: bookings } = await supabase
     .from('bookings')
     .select('id, facility_id, beds24_booking_id, facilities(ota_account_id)')
     .eq('ota_source', 'beds24')
     .not('beds24_booking_id', 'is', null)
+    .gte('checkout_date', since)
+    .order('checkin_date', { ascending: false })
+    .limit(300)
 
   if (!bookings?.length) {
     return NextResponse.json({ synced: 0, message: 'Beds24予約がありません' })
@@ -39,12 +44,16 @@ export async function POST() {
     let messages
     try {
       messages = await getMessages(apiKey, { bookingId: b.beds24_booking_id! })
-    } catch {
-      continue // 個別予約のエラーはスキップ
+    } catch (e) {
+      // 個別予約のエラーは記録して続行（無言で成功扱いにしない）
+      errors.push(`予約 ${b.beds24_booking_id}: ${e instanceof Error ? e.message : String(e)}`)
+      continue
     }
 
     for (const m of messages) {
       if (!m.message) continue
+      // OTA側IDが無いメッセージは重複判定できない（NULLは一意制約に掛からず毎回増える）ためスキップ
+      if (!m.id) continue
       // guest→incoming, それ以外(host/channel/system)→outgoing扱い
       const direction = m.source === 'guest' ? 'incoming' : 'outgoing'
 

@@ -69,7 +69,8 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
   const [thread, setThread] = useState<ThreadMessage[]>([])
   const [threadLoading, setThreadLoading] = useState(false)
   const [syncing, setSyncing] = useState(false)
-  const [syncNote, setSyncNote] = useState<string | null>(null)
+  const [syncNote, setSyncNote] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [threadError, setThreadError] = useState('')
   const [search, setSearch] = useState('')
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
@@ -121,55 +122,85 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
     setSelectedId(bookingId)
     setThreadLoading(true)
     setSendError('')
-    const res = await fetch(`/api/messages/${bookingId}`)
-    const data = await res.json()
-    setThread(Array.isArray(data) ? data : [])
-    setThreadLoading(false)
-    // 既読化をローカルにも反映
-    setMessages(prev => prev.map(m =>
-      m.booking_id === bookingId && m.direction === 'incoming' ? { ...m, read: true } : m
-    ))
+    setThreadError('')
+    try {
+      const res = await fetch(`/api/messages/${bookingId}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setThread([])
+        setThreadError((data as { error?: string }).error ?? 'メッセージの取得に失敗しました')
+        return
+      }
+      setThread(Array.isArray(data) ? data : [])
+      // 既読化をローカルにも反映
+      setMessages(prev => prev.map(m =>
+        m.booking_id === bookingId && m.direction === 'incoming' ? { ...m, read: true } : m
+      ))
+    } catch {
+      setThread([])
+      setThreadError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setThreadLoading(false)
+    }
   }
 
   const handleSync = async () => {
     setSyncing(true)
     setSyncNote(null)
-    const res = await fetch('/api/messages/sync', { method: 'POST' })
-    const data = await res.json()
-    if (res.ok) {
-      setSyncNote(data.synced > 0 ? `${data.synced}件のメッセージを取り込みました` : '新着メッセージはありません')
+    try {
+      const res = await fetch('/api/messages/sync', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSyncNote({ type: 'err', text: data.error ?? '同期に失敗しました' })
+        return
+      }
+      setSyncNote({
+        type: 'ok',
+        text: data.synced > 0 ? `${data.synced}件のメッセージを取り込みました` : '新着メッセージはありません',
+      })
       // 再読込
       const listRes = await fetch('/api/messages')
-      const list = await listRes.json()
-      setMessages(Array.isArray(list) ? list : [])
+      if (listRes.ok) {
+        const list = await listRes.json().catch(() => [])
+        setMessages(Array.isArray(list) ? list : [])
+      }
       if (selectedId) loadThread(selectedId)
-    } else {
-      setSyncNote(data.error ?? '同期に失敗しました')
+      setTimeout(() => setSyncNote(null), 6000)
+    } catch {
+      setSyncNote({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+    } finally {
+      setSyncing(false)
     }
-    setSyncing(false)
-    setTimeout(() => setSyncNote(null), 6000)
   }
 
   const handleSend = async () => {
     if (!draft.trim() || !selectedId) return
     setSending(true)
     setSendError('')
-    const res = await fetch(`/api/messages/${selectedId}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body: draft.trim() }),
-    })
-    const data = await res.json()
-    if (res.ok) {
-      setThread(prev => [...prev, data.message])
-      setMessages(prev => [data.message
-        ? { ...data.message, booking_id: selectedId, facility_id: selectedBooking?.facility_id ?? '' }
-        : null, ...prev].filter(Boolean) as Message[])
+    try {
+      const res = await fetch(`/api/messages/${selectedId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body: draft.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setSendError(data.error ?? '送信に失敗しました')
+        return
+      }
+      if (data.message) {
+        setThread(prev => [...prev, data.message])
+        setMessages(prev => [
+          { ...data.message, booking_id: selectedId, facility_id: selectedBooking?.facility_id ?? '' },
+          ...prev,
+        ] as Message[])
+      }
       setDraft('')
-    } else {
-      setSendError(data.error ?? '送信に失敗しました')
+    } catch {
+      setSendError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setSending(false)
     }
-    setSending(false)
   }
 
   const isBeds24 = selectedBooking?.ota_source === 'beds24'
@@ -200,7 +231,13 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
             <RefreshCw size={13} className={syncing ? 'animate-spin' : ''} />
             {syncing ? '同期中…' : 'メッセージを同期'}
           </button>
-          {syncNote && <span className="text-xs text-gray-500 bg-gray-50 rounded px-2 py-1">{syncNote}</span>}
+          {syncNote && (
+            <span className={`text-xs rounded px-2 py-1 ${
+              syncNote.type === 'ok' ? 'text-gray-500 bg-gray-50' : 'text-red-600 bg-red-50'
+            }`}>
+              {syncNote.text}
+            </span>
+          )}
         </div>
       </div>
 
@@ -340,6 +377,8 @@ export function MessagesClient({ initialMessages, bookings, refreshFacilityIds }
                   <div className="flex justify-center py-10">
                     <div className="w-6 h-6 border-2 border-navy-400 border-t-transparent rounded-full animate-spin" />
                   </div>
+                ) : threadError ? (
+                  <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{threadError}</p>
                 ) : thread.length > 0 ? [...thread].reverse().map(m => (
                   <div key={m.id} className={`flex ${m.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}>
                     <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${

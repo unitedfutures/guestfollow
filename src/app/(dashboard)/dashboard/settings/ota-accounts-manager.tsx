@@ -44,6 +44,8 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
 
   const [addStep, setAddStep] = useState<string | null>(null)
   const [addResult, setAddResult] = useState<string | null>(null)
+  // 一覧側の操作（再取込・削除・解除）のエラー表示
+  const [opError, setOpError] = useState('')
 
   // Refresh Token（invite code）設定用 state
   const [refreshFor, setRefreshFor] = useState<string | null>(null) // 入力欄を開いているアカウントID
@@ -58,37 +60,51 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
     if (!inviteCode.trim()) { setRefreshError('invite code を入力してください'); return }
     setRefreshBusy(true)
     setRefreshError('')
-    const res = await fetch('/api/ota-accounts', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, invite_code: inviteCode.trim() }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      setRefreshError(data.error ?? 'Refresh Tokenの設定に失敗しました')
+    try {
+      const res = await fetch('/api/ota-accounts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, invite_code: inviteCode.trim() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setRefreshError(data.error ?? 'Refresh Tokenの設定に失敗しました')
+        return
+      }
+      setAccountRefresh(id, true)
+      setRefreshFor(null)
+      setInviteCode('')
+      router.refresh()
+    } catch {
+      setRefreshError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
       setRefreshBusy(false)
-      return
     }
-    setAccountRefresh(id, true)
-    setRefreshFor(null)
-    setInviteCode('')
-    setRefreshBusy(false)
-    router.refresh()
   }
 
   const handleRemoveRefresh = async (id: string) => {
     if (!confirm('メッセージ連携（Refresh Token）を解除しますか？\n解除するとこのアカウントではメッセージ送信ができなくなります。')) return
     setRefreshBusy(true)
-    const res = await fetch('/api/ota-accounts', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, remove_refresh: true }),
-    })
-    if (res.ok) {
+    setRefreshError('')
+    setOpError('')
+    try {
+      const res = await fetch('/api/ota-accounts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, remove_refresh: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setOpError(data.error ?? 'メッセージ連携の解除に失敗しました')
+        return
+      }
       setAccountRefresh(id, false)
       router.refresh()
+    } catch {
+      setOpError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setRefreshBusy(false)
     }
-    setRefreshBusy(false)
   }
 
   const handleAdd = async () => {
@@ -96,75 +112,98 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
     setAdding(true)
     setAddError('')
     setAddResult(null)
+    setOpError('')
 
-    // ① アカウント登録
-    setAddStep('アカウントを登録中…')
-    const res = await fetch('/api/ota-accounts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider, label, api_key: apiKey }),
-    })
-    const data = await res.json()
+    try {
+      // ① アカウント登録
+      setAddStep('アカウントを登録中…')
+      const res = await fetch('/api/ota-accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, label, api_key: apiKey }),
+      })
+      const data = await res.json().catch(() => ({}))
 
-    if (!res.ok) {
-      setAddError(data.error ?? '追加に失敗しました')
+      if (!res.ok) {
+        setAddError(data.error ?? '追加に失敗しました')
+        return
+      }
+
+      // ② 施設を自動インポート（トークン検証を兼ねる）
+      setAddStep('施設情報を読み込み中…')
+      const importRes = await fetch(`/api/${provider}/import-facilities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: data.id }),
+      })
+      const importData = await importRes.json().catch(() => ({}))
+
+      if (!importRes.ok) {
+        // トークン不正など → アカウントを削除して再入力を促す
+        await fetch(`/api/ota-accounts?id=${data.id}`, { method: 'DELETE' }).catch(() => {})
+        setAddError(
+          `${importData.error ?? '施設の読み込みに失敗しました'}\nトークンが正しいか確認して、もう一度追加してください。`
+        )
+        return
+      }
+
+      // ③ 予約を自動同期
+      setAddStep('予約情報を読み込み中…')
+      let syncedNote = ''
+      let syncFailed = false
+      try {
+        const syncRes = await fetch('/api/bookings/sync-all', { method: 'POST' })
+        const syncData = await syncRes.json().catch(() => ({}))
+        if (syncRes.ok && !(Array.isArray(syncData.errors) && syncData.errors.length > 0)) {
+          syncedNote = `／ 予約 ${syncData.synced}件を取り込みました`
+        } else {
+          syncFailed = true
+        }
+      } catch {
+        syncFailed = true
+      }
+
+      setAccounts(prev => [...prev, data])
+      setShowAddForm(false)
+      setLabel('')
+      setApiKey('')
+      setProvider('beds24')
+      const importNote = `施設 ${importData.imported}件をインポート${importData.skipped > 0 ? `（${importData.skipped}件は登録済み）` : ''}`
+      if (syncFailed) {
+        setOpError(
+          `アカウントは登録されましたが予約の同期に失敗しました。あとで「再取込」から再実行できます（${importNote}）`
+        )
+      } else {
+        setAddResult(`連携が完了しました。${importNote}${syncedNote}`)
+        setTimeout(() => setAddResult(null), 10000)
+      }
+      router.refresh()
+    } catch {
+      setAddError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
       setAddStep(null)
       setAdding(false)
-      return
     }
-
-    // ② 施設を自動インポート（トークン検証を兼ねる）
-    setAddStep('施設情報を読み込み中…')
-    const importRes = await fetch(`/api/${provider}/import-facilities`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: data.id }),
-    })
-    const importData = await importRes.json()
-
-    if (!importRes.ok) {
-      // トークン不正など → アカウントを削除して再入力を促す
-      await fetch(`/api/ota-accounts?id=${data.id}`, { method: 'DELETE' })
-      setAddError(
-        `${importData.error ?? '施設の読み込みに失敗しました'}\nトークンが正しいか確認して、もう一度追加してください。`
-      )
-      setAddStep(null)
-      setAdding(false)
-      return
-    }
-
-    // ③ 予約を自動同期
-    setAddStep('予約情報を読み込み中…')
-    let syncedNote = ''
-    const syncRes = await fetch('/api/bookings/sync-all', { method: 'POST' })
-    if (syncRes.ok) {
-      const syncData = await syncRes.json()
-      syncedNote = `／ 予約 ${syncData.synced}件を取り込みました`
-    }
-
-    setAccounts(prev => [...prev, data])
-    setShowAddForm(false)
-    setLabel('')
-    setApiKey('')
-    setProvider('beds24')
-    setAddStep(null)
-    setAddResult(
-      `連携が完了しました。施設 ${importData.imported}件をインポート${importData.skipped > 0 ? `（${importData.skipped}件は登録済み）` : ''}${syncedNote}`
-    )
-    setTimeout(() => setAddResult(null), 10000)
-    router.refresh()
-    setAdding(false)
   }
 
   const handleDelete = async (id: string) => {
     if (!confirm('このアカウント連携を削除しますか？\n施設の紐付けは解除されますが、施設・予約データは削除されません。')) return
     setDeletingId(id)
-    const res = await fetch(`/api/ota-accounts?id=${id}`, { method: 'DELETE' })
-    if (res.ok) {
+    setOpError('')
+    try {
+      const res = await fetch(`/api/ota-accounts?id=${id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setOpError(data.error ?? '連携の削除に失敗しました')
+        return
+      }
       setAccounts(prev => prev.filter(a => a.id !== id))
       router.refresh()
+    } catch {
+      setOpError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setDeletingId(null)
     }
-    setDeletingId(null)
   }
 
   // 連携済みアカウントの再取込：施設を再インポート → 予約を同期
@@ -172,32 +211,49 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
     setRefreshingId(acc.id)
     setAddError('')
     setAddResult(null)
+    setOpError('')
 
-    const impRes = await fetch(`/api/${acc.provider}/import-facilities`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account_id: acc.id }),
-    })
-    const impData = await impRes.json()
-    if (!impRes.ok) {
-      setAddError(impData.error ?? '施設の再取込に失敗しました。トークンが有効かご確認ください。')
+    try {
+      const impRes = await fetch(`/api/${acc.provider}/import-facilities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: acc.id }),
+      })
+      const impData = await impRes.json().catch(() => ({}))
+      if (!impRes.ok) {
+        setOpError(impData.error ?? '施設の再取込に失敗しました。トークンが有効かご確認ください。')
+        return
+      }
+
+      let syncedNote = ''
+      let syncFailed = false
+      try {
+        const syncRes = await fetch('/api/bookings/sync-all', { method: 'POST' })
+        const s = await syncRes.json().catch(() => ({}))
+        if (syncRes.ok && !(Array.isArray(s.errors) && s.errors.length > 0)) {
+          syncedNote = `／ 予約 ${s.synced}件を同期`
+        } else {
+          syncFailed = true
+        }
+      } catch {
+        syncFailed = true
+      }
+
+      const importNote = `施設 ${impData.imported}件をインポート${impData.skipped > 0 ? `（${impData.skipped}件は登録済み）` : ''}`
+      if (syncFailed) {
+        setOpError(
+          `施設は更新されましたが予約の同期に失敗しました。あとで「再取込」から再実行できます（${importNote}）`
+        )
+      } else {
+        setAddResult(`${PROVIDER_LABELS[acc.provider]}を更新しました。${importNote}${syncedNote}`)
+        setTimeout(() => setAddResult(null), 10000)
+      }
+      router.refresh()
+    } catch {
+      setOpError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
       setRefreshingId(null)
-      return
     }
-
-    let syncedNote = ''
-    const syncRes = await fetch('/api/bookings/sync-all', { method: 'POST' })
-    if (syncRes.ok) {
-      const s = await syncRes.json()
-      syncedNote = `／ 予約 ${s.synced}件を同期`
-    }
-
-    setAddResult(
-      `${PROVIDER_LABELS[acc.provider]}を更新しました。施設 ${impData.imported}件をインポート${impData.skipped > 0 ? `（${impData.skipped}件は登録済み）` : ''}${syncedNote}`
-    )
-    setTimeout(() => setAddResult(null), 10000)
-    setRefreshingId(null)
-    router.refresh()
   }
 
   return (
@@ -224,6 +280,10 @@ export function OtaAccountsManager({ initialAccounts }: { initialAccounts: OtaAc
           <p className="text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2">
             {addResult}
           </p>
+        )}
+
+        {opError && (
+          <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 whitespace-pre-line">{opError}</p>
         )}
 
         {/* 追加フォーム */}

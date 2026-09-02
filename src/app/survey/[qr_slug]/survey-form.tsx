@@ -163,7 +163,7 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
       await fetch('/api/survey', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: responseId, improvement: improvement || null }),
+        body: JSON.stringify({ id: responseId, qr_slug: qrSlug, improvement: improvement || null }),
       }).catch(() => {})
       setImpSubmitting(false)
     }

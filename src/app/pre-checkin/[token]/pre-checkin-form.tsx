@@ -31,6 +31,7 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [guestRecordId, setGuestRecordId] = useState('')
+  const [setupToken, setSetupToken] = useState('') // パスキー登録を本人に紐づけるトークン（登録APIが返す）
 
   // Step 1: 基本情報
   const [basic, setBasic] = useState({
@@ -96,6 +97,7 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
 
     const data = await res.json()
     setGuestRecordId(data.guest_record_id)
+    setSetupToken(data.passkey_setup_token ?? '')
     setStep('passkey')
     setLoading(false)
   }
@@ -107,14 +109,18 @@ export function PreCheckinForm({ token, defaultEmail, defaultName, numGuests, fo
       const optRes = await fetch('/api/passkey/register-options', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_record_id: guestRecordId }),
+        body: JSON.stringify({ guest_record_id: guestRecordId, setup_token: setupToken }),
       })
       const options = await optRes.json()
+      if (!optRes.ok) {
+        setError(options.error || t('passkey_prepare_failed'))
+        return
+      }
       const credential = await startRegistration({ optionsJSON: options })
       const verifyRes = await fetch('/api/passkey/register-verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ guest_record_id: guestRecordId, credential }),
+        body: JSON.stringify({ guest_record_id: guestRecordId, credential, setup_token: setupToken }),
       })
       if (!verifyRes.ok) {
         const data = await verifyRes.json()

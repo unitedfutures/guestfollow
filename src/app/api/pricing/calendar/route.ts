@@ -2,6 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { getRoomCalendar } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
+import { canManage } from '@/lib/auth/can-manage'
 
 // 部屋の料金カレンダー（価格・最低宿泊日数）を取得
 export async function GET(request: Request) {
@@ -24,6 +25,9 @@ export async function GET(request: Request) {
     .eq('id', facilityId)
     .single()
   if (!facility) return NextResponse.json({ error: '施設が見つかりません' }, { status: 404 })
+  if (!(await canManage(supabase, facility.id, user.id))) {
+    return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
+  }
 
   const { token } = await resolveBeds24Token(supabase, user.id, facility)
   if (!token) return NextResponse.json({ error: 'Beds24のトークンが設定されていません' }, { status: 400 })

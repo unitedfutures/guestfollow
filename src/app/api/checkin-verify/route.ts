@@ -1,14 +1,21 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { generatePin } from '@/lib/utils'
+import { createServiceRoleClient } from '@/lib/supabase/server'
+import { generatePin, jstDate, jstEndOfDay } from '@/lib/utils'
 import { createAccessCode } from '@/lib/remotelock/client'
 
+const MAX_FACE_PHOTO_CHARS = 7 * 1024 * 1024 // data URI（base64）で約5MB相当
+
+// 公開エンドポイント（認証不要）。秘密の guest_qr_token + facility_id で予約を特定する。
+// service role を使うため、予約の特定は必ずトークンで行い、書き込みはその予約に限定する。
 export async function POST(request: Request) {
-  const supabase = await createClient()
+  const supabase = createServiceRoleClient()
   const { facility_id, guest_qr_token, face_photo } = await request.json()
 
   if (!facility_id || !guest_qr_token) {
     return NextResponse.json({ error: '必須パラメータが不足しています' }, { status: 400 })
+  }
+  if (face_photo && (typeof face_photo !== 'string' || face_photo.length > MAX_FACE_PHOTO_CHARS)) {
+    return NextResponse.json({ error: '顔写真のサイズが大きすぎます' }, { status: 400 })
   }
 
   const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown'
@@ -45,8 +52,8 @@ export async function POST(request: Request) {
     }, { status: 400 })
   }
 
-  // チェックイン日の確認
-  const today = new Date().toISOString().split('T')[0]
+  // チェックイン日の確認（日本時間の暦日で判定。UTCだと深夜0〜9時に前日扱いになる）
+  const today = jstDate()
   if (booking.checkin_date > today) {
     return NextResponse.json({
       error: `チェックイン日（${booking.checkin_date}）より前のため入室できません。`
@@ -60,23 +67,26 @@ export async function POST(request: Request) {
   let face_photo_path: string | null = null
   if (face_photo && face_photo.startsWith('data:image/')) {
     const base64Data = face_photo.split(',')[1]
-    const buffer = Buffer.from(base64Data, 'base64')
-    const path = `${booking.id}/${Date.now()}.jpg`
+    // カンマ無しの不正な data URI は無視（Buffer.from(undefined) で落ちないように）
+    if (base64Data) {
+      const buffer = Buffer.from(base64Data, 'base64')
+      const path = `${booking.id}/${Date.now()}.jpg`
 
-    const { error: uploadError } = await supabase.storage
-      .from('face-photos')
-      .upload(path, buffer, { contentType: 'image/jpeg', upsert: true })
+      const { error: uploadError } = await supabase.storage
+        .from('face-photos')
+        .upload(path, buffer, { contentType: 'image/jpeg', upsert: true })
 
-    if (!uploadError) face_photo_path = path
+      if (!uploadError) face_photo_path = path
+    }
   }
 
   // 暗証番号：施設に固定PINが設定されていればそれを使用、なければランダム4桁
   const facility = booking.facilities as unknown as { remote_lock_device_id: string | null; pin_code: string | null }
   const pin_code = facility?.pin_code?.trim() || generatePin(4)
 
-  // access_codes に保存
-  const checkoutDate = new Date(booking.checkout_date)
-  checkoutDate.setHours(23, 59, 59)
+  // 暗証番号の有効期限：チェックアウト日の JST 23:59:59
+  // （new Date('YYYY-MM-DD') はUTC 0時のため、setHours ではUTC基準になり翌朝9時まで有効になってしまう）
+  const checkoutDate = jstEndOfDay(booking.checkout_date)
 
   let remoteLockResponse = null
 
@@ -96,7 +106,7 @@ export async function POST(request: Request) {
     }
   }
 
-  await supabase.from('access_codes').insert({
+  const { error: codeErr } = await supabase.from('access_codes').insert({
     booking_id: booking.id,
     facility_id,
     code: pin_code,
@@ -104,9 +114,13 @@ export async function POST(request: Request) {
     expires_at: checkoutDate.toISOString(),
     remote_lock_response: remoteLockResponse,
   })
+  if (codeErr) {
+    console.error('[checkin-verify] access_codes insert error:', codeErr)
+    return NextResponse.json({ error: '暗証番号の発行記録に失敗しました。お手数ですが再度お試しください。' }, { status: 500 })
+  }
 
   // guest_records を更新（顔写真・チェックイン記録）
-  await supabase.from('guest_records')
+  const { error: grErr } = await supabase.from('guest_records')
     .update({
       face_photo_path,
       checkin_qr_scanned_at: now,
@@ -114,11 +128,17 @@ export async function POST(request: Request) {
       checkin_completed_at: now,
     })
     .eq('booking_id', booking.id)
+  if (grErr) console.error('[checkin-verify] guest_records update error:', grErr)
 
-  // booking ステータスを checked_in に更新
-  await supabase.from('bookings')
+  // booking ステータスを checked_in に更新（更新できたか確認。二重発行の防止）
+  const { data: updated, error: updErr } = await supabase.from('bookings')
     .update({ status: 'checked_in', updated_at: now })
     .eq('id', booking.id)
+    .select('id')
+  if (updErr || !updated?.length) {
+    console.error('[checkin-verify] bookings update error:', updErr)
+    return NextResponse.json({ error: 'チェックイン状態の更新に失敗しました。お手数ですが再度お試しください。' }, { status: 500 })
+  }
 
   return NextResponse.json({ pin_code })
 }

@@ -28,6 +28,7 @@ export function FacilityTaxConfig({
   )
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [error, setError] = useState('')
 
   const applyPreset = (key: string) => {
     const p = TAX_PRESETS.find(x => x.key === key)
@@ -68,15 +69,26 @@ export function FacilityTaxConfig({
   const handleSave = async () => {
     setSaving(true)
     setSaved(false)
-    await fetch('/api/facilities', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: facilityId, accommodation_tax: buildConfig() }),
-    })
-    setSaving(false)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 3000)
-    router.refresh()
+    setError('')
+    try {
+      const res = await fetch('/api/facilities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: facilityId, accommodation_tax: buildConfig() }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error ?? '保存に失敗しました')
+        return
+      }
+      setSaved(true)
+      setTimeout(() => setSaved(false), 3000)
+      router.refresh()
+    } catch {
+      setError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -135,7 +147,7 @@ export function FacilityTaxConfig({
               {type === 'percent' && (
                 <div className="flex items-center gap-2 text-sm">
                   <span className="text-gray-600">宿泊料の</span>
-                  <input type="number" step="0.1" value={percent} onChange={e => setPercent(Number(e.target.value))}
+                  <input type="number" step="0.1" value={percent} onChange={e => setPercent(Number(e.target.value) || 0)}
                     className="w-20 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-navy-300" />
                   <span className="text-gray-600">%</span>
                 </div>
@@ -173,6 +185,7 @@ export function FacilityTaxConfig({
             <Button onClick={handleSave} loading={saving} className="!py-1.5 text-sm">保存</Button>
             {saved && <span className="text-xs text-green-600 flex items-center gap-1"><Check size={14} /> 保存しました</span>}
           </div>
+          {error && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         </div>
       )}
     </div>

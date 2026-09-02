@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createServiceRoleClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { SurveyForm } from './survey-form'
 import type { SurveyConfig } from './survey-form'
@@ -18,7 +18,8 @@ const DEFAULT_SURVEY_CONFIG: SurveyConfig = {
 
 export default async function SurveyPage({ params }: { params: Promise<{ qr_slug: string }> }) {
   const { qr_slug } = await params
-  const supabase = await createClient()
+  // 公開ページ：秘密の qr_slug で絞った1件のみ service role で読む
+  const supabase = createServiceRoleClient()
 
   const { data: facility } = await supabase
     .from('facilities')

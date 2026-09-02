@@ -12,23 +12,38 @@ export function BookingForm({ facilities }: { facilities: Facility[] }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
   const [form, setForm] = useState({ facility_id: '', guest_name: '', guest_email: '', checkin_date: '', checkout_date: '', num_guests: '1' })
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    const numGuests = Number.parseInt(form.num_guests, 10)
+    if (!Number.isFinite(numGuests) || numGuests < 1) {
+      setError('宿泊人数は1以上の数値で入力してください')
+      return
+    }
     setLoading(true)
-    const res = await fetch('/api/bookings', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...form, num_guests: parseInt(form.num_guests) }),
-    })
-    if (res.ok) {
+    setError('')
+    try {
+      const res = await fetch('/api/bookings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, num_guests: numGuests }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(data.error ?? '予約の追加に失敗しました')
+        return
+      }
       setOpen(false)
       setForm({ facility_id: '', guest_name: '', guest_email: '', checkin_date: '', checkout_date: '', num_guests: '1' })
       router.refresh()
+    } catch {
+      setError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   return (
@@ -63,6 +78,9 @@ export function BookingForm({ facilities }: { facilities: Facility[] }) {
                 <p className="text-xs text-indigo-600 bg-indigo-50 px-3 py-2 rounded-lg">
                   ✉️ 登録後、事前チェックイン案内メールを自動送信します
                 </p>
+              )}
+              {error && (
+                <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{error}</p>
               )}
               <div className="flex gap-3 pt-2">
                 <Button type="button" variant="outline" className="flex-1" onClick={() => setOpen(false)}>キャンセル</Button>

@@ -33,36 +33,56 @@ export function FacilityBasicInfo({ facility, appUrl }: Props) {
   const [cameraCheckin, setCameraCheckin] = useState(facility.camera_checkin ?? false)
   const [cameraSaving, setCameraSaving] = useState(false)
   const [cameraSaved, setCameraSaved] = useState(false)
+  const [cameraError, setCameraError] = useState('')
 
   const handlePinSave = async () => {
     setPinSaving(true)
     setPinError('')
-    const res = await fetch('/api/facilities', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: facility.id, pin_code: pinCode.trim() || null }),
-    })
-    if (res.ok) {
+    try {
+      const res = await fetch('/api/facilities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: facility.id, pin_code: pinCode.trim() || null }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setPinError(d.error || '保存に失敗しました')
+        return
+      }
       setPinSaved(true)
       setTimeout(() => setPinSaved(false), 3000)
-    } else {
-      const d = await res.json()
-      setPinError(d.error || '保存に失敗しました')
+    } catch {
+      setPinError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setPinSaving(false)
     }
-    setPinSaving(false)
   }
 
   const handleCameraToggle = async (value: boolean) => {
+    const prevValue = cameraCheckin
     setCameraCheckin(value)
     setCameraSaving(true)
-    await fetch('/api/facilities', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: facility.id, camera_checkin: value }),
-    })
-    setCameraSaving(false)
-    setCameraSaved(true)
-    setTimeout(() => setCameraSaved(false), 2000)
+    setCameraError('')
+    try {
+      const res = await fetch('/api/facilities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: facility.id, camera_checkin: value }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setCameraCheckin(prevValue)
+        setCameraError(d.error || '保存に失敗しました')
+        return
+      }
+      setCameraSaved(true)
+      setTimeout(() => setCameraSaved(false), 2000)
+    } catch {
+      setCameraCheckin(prevValue)
+      setCameraError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setCameraSaving(false)
+    }
   }
 
   return (
@@ -194,6 +214,7 @@ export function FacilityBasicInfo({ facility, appUrl }: Props) {
                 }`} />
               </button>
             </div>
+            {cameraError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{cameraError}</p>}
             <p className="text-xs text-gray-400">
               現在: <span className={`font-medium ${cameraCheckin ? 'text-indigo-600' : 'text-gray-500'}`}>
                 {cameraCheckin ? '有効（チェックイン時に撮影あり）' : '無効'}

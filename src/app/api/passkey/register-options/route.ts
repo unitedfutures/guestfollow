@@ -10,20 +10,21 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { guest_record_id } = await request.json()
+    const { guest_record_id, setup_token } = await request.json()
 
-    if (!guest_record_id) {
-      return NextResponse.json({ error: 'guest_record_id is required' }, { status: 400 })
+    if (!guest_record_id || !setup_token) {
+      return NextResponse.json({ error: 'guest_record_id と setup_token は必須です' }, { status: 400 })
     }
 
-    // guest_records から full_name を取得
+    // 登録直後のブラウザにだけ渡した setup_token が一致する場合のみ許可
+    // （IDを知っただけの第三者が他人の予約にパスキーを登録するのを防ぐ）
     const { data: guestRecord, error: guestError } = await supabase
       .from('guest_records')
-      .select('full_name')
+      .select('full_name, passkey_setup_token')
       .eq('id', guest_record_id)
-      .single()
+      .maybeSingle()
 
-    if (guestError || !guestRecord) {
+    if (guestError || !guestRecord || !guestRecord.passkey_setup_token || guestRecord.passkey_setup_token !== setup_token) {
       return NextResponse.json({ error: '宿泊者情報が見つかりません' }, { status: 404 })
     }
 
@@ -39,7 +40,8 @@ export async function POST(request: Request) {
       },
     })
 
-    // チャレンジを passkey_challenges テーブルに保存
+    // 古いチャレンジを掃除してから保存
+    await supabase.from('passkey_challenges').delete().eq('guest_record_id', guest_record_id).eq('type', 'registration')
     const { error: insertError } = await supabase.from('passkey_challenges').insert({
       challenge: options.challenge,
       type: 'registration',
@@ -49,10 +51,7 @@ export async function POST(request: Request) {
 
     if (insertError) {
       console.error('passkey_challenges insert error:', insertError)
-      return NextResponse.json(
-        { error: `チャレンジの保存に失敗しました: ${insertError.message}` },
-        { status: 500 }
-      )
+      return NextResponse.json({ error: 'チャレンジの保存に失敗しました' }, { status: 500 })
     }
 
     return NextResponse.json(options)

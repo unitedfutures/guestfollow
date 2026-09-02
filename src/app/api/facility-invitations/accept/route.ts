@@ -31,6 +31,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: '招待リンクの有効期限が切れています' }, { status: 410 })
   }
 
+  // 招待先メールアドレスとログインユーザーのメールが一致する場合のみ承認可
+  const invitedEmail = (invitation.invited_email ?? '').trim().toLowerCase()
+  const userEmail = (user.email ?? '').trim().toLowerCase()
+  if (!invitedEmail || invitedEmail !== userEmail) {
+    return NextResponse.json({
+      error: 'この招待は別のメールアドレス宛です。招待されたメールアドレスでログインしてください。',
+    }, { status: 403 })
+  }
+
   // 施設オーナー自身は参加不要
   const { data: facility } = await serviceSupabase
     .from('facilities')

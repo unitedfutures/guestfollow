@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/server'
 import {
   QrCode, ShieldCheck, FileText, ArrowRight, CheckCircle, CheckCircle2, XCircle,
-  ChevronRight, Users, Globe, ClipboardList, RefreshCw, Lock, Camera, LayoutDashboard,
+  ChevronRight, Users, Globe, ClipboardList, RefreshCw, Lock, LayoutDashboard,
   Search, MessageSquare, Database, KeyRound, Mail, TrendingUp, ClipboardCheck, Coins, Tag,
   Sparkles, Zap, Scale, Building2, Plus,
 } from 'lucide-react'

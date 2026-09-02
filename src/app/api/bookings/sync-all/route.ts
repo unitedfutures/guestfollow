@@ -34,10 +34,12 @@ export async function POST() {
     .eq('id', user.id)
     .single()
 
-  const today = new Date()
-  // 過去24ヶ月〜将来3ヶ月の予約を取り込む（売上レポート用に過去分も対象）
-  const dateFrom = new Date(new Date().setMonth(today.getMonth() - 24)).toISOString().split('T')[0]
-  const dateTo = new Date(new Date().setMonth(today.getMonth() + 3)).toISOString().split('T')[0]
+  // 過去24ヶ月の月初〜3ヶ月後の月末の予約を取り込む（売上レポート用に過去分も対象）
+  // ※ setMonth は月末日で桁あふれするため、Date.UTC で月初/月末に固定する
+  const now = new Date()
+  const y = now.getUTCFullYear(), m = now.getUTCMonth()
+  const dateFrom = new Date(Date.UTC(y, m - 24, 1)).toISOString().split('T')[0]
+  const dateTo = new Date(Date.UTC(y, m + 4, 0)).toISOString().split('T')[0]
 
   let totalSynced = 0
   let totalSkipped = 0
@@ -55,17 +57,19 @@ export async function POST() {
         try {
           const list = await getBookings(f.beds24_property_id, dateFrom, dateTo, apiKey)
           for (const b of list) {
+            // 既存判定は0件が正常系なので maybeSingle
             const { data: existing } = await supabase
-              .from('bookings').select('id').eq('beds24_booking_id', b.bookId).single()
+              .from('bookings').select('id').eq('beds24_booking_id', b.bookId).maybeSingle()
             if (existing) {
-              await supabase.from('bookings').update({
+              const { error: updErr } = await supabase.from('bookings').update({
                 price: b.price, commission: b.commission, room_charge: b.roomCharge, guest_country: b.guestCountry || null, ota_status: b.otaStatus, ota_channel: b.channel || null,
               }).eq('id', existing.id)
+              if (updErr) { errors.push(`${f.name}: 予約 ${b.bookId} の更新に失敗（${updErr.message}）`); continue }
               totalSkipped++
               continue
             }
 
-            await supabase.from('bookings').insert({
+            const { error: insErr } = await supabase.from('bookings').insert({
               facility_id: f.id,
               user_id: user.id,
               beds24_booking_id: b.bookId,
@@ -83,10 +87,12 @@ export async function POST() {
               guest_country: b.guestCountry || null,
               ota_status: b.otaStatus,
             })
+            // 失敗（一意制約違反など）は成功件数に数えない
+            if (insErr) { errors.push(`${f.name}: 予約 ${b.bookId} の登録に失敗（${insErr.message}）`); continue }
             totalSynced++
           }
         } catch (e) {
-          errors.push(`${f.name}: Beds24同期エラー`)
+          errors.push(`${f.name}: Beds24同期エラー（${e instanceof Error ? e.message : String(e)}）`)
         }
       }
     }
@@ -101,16 +107,17 @@ export async function POST() {
           const list = await getAirhostBookings(f.airhost_property_id, dateFrom, dateTo, apiKey)
           for (const b of list) {
             const { data: existing } = await supabase
-              .from('bookings').select('id').eq('airhost_booking_id', b.uid).single()
+              .from('bookings').select('id').eq('airhost_booking_id', b.uid).maybeSingle()
             if (existing) {
-              await supabase.from('bookings').update({
+              const { error: updErr } = await supabase.from('bookings').update({
                 price: pickAirhostPrice(b), ota_status: pickAirhostOtaStatus(b), ota_channel: pickAirhostChannel(b) || null,
               }).eq('id', existing.id)
+              if (updErr) { errors.push(`${f.name}: 予約 ${b.uid} の更新に失敗（${updErr.message}）`); continue }
               totalSkipped++
               continue
             }
 
-            await supabase.from('bookings').insert({
+            const { error: insErr } = await supabase.from('bookings').insert({
               facility_id: f.id,
               user_id: user.id,
               airhost_booking_id: b.uid,
@@ -125,10 +132,11 @@ export async function POST() {
               price: pickAirhostPrice(b),
               ota_status: pickAirhostOtaStatus(b),
             })
+            if (insErr) { errors.push(`${f.name}: 予約 ${b.uid} の登録に失敗（${insErr.message}）`); continue }
             totalSynced++
           }
         } catch (e) {
-          errors.push(`${f.name}: Airhost同期エラー`)
+          errors.push(`${f.name}: Airhost同期エラー（${e instanceof Error ? e.message : String(e)}）`)
         }
       }
     }

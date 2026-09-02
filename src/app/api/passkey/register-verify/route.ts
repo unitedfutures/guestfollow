@@ -12,22 +12,34 @@ const supabase = createClient(
 
 export async function POST(request: Request) {
   try {
-    const { guest_record_id, credential }: { guest_record_id: string; credential: RegistrationResponseJSON } =
-      await request.json()
+    const { guest_record_id, credential, setup_token }: {
+      guest_record_id: string; credential: RegistrationResponseJSON; setup_token?: string
+    } = await request.json()
 
-    if (!guest_record_id || !credential) {
+    if (!guest_record_id || !credential || !setup_token) {
       return NextResponse.json({ error: '必須パラメータが不足しています' }, { status: 400 })
     }
 
-    // チャレンジを取得（expires_at が null の行も拾えるよう or 条件にする）
+    // 本人確認：登録直後のブラウザにだけ渡した setup_token と一致することを要求
+    const { data: owner } = await supabase
+      .from('guest_records')
+      .select('passkey_setup_token')
+      .eq('id', guest_record_id)
+      .maybeSingle()
+    if (!owner || !owner.passkey_setup_token || owner.passkey_setup_token !== setup_token) {
+      return NextResponse.json({ error: '宿泊者情報が見つかりません' }, { status: 404 })
+    }
+
+    // 有効期限内のチャレンジを取得
     const { data: challengeRecord, error: challengeError } = await supabase
       .from('passkey_challenges')
       .select('id, challenge, expires_at')
       .eq('type', 'registration')
       .eq('guest_record_id', guest_record_id)
+      .gt('expires_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(1)
-      .single()
+      .maybeSingle()
 
     if (challengeError || !challengeRecord) {
       console.error('challenge lookup error:', challengeError, 'guest_record_id:', guest_record_id)

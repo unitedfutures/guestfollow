@@ -1,24 +1,6 @@
 import { createClient, createServiceRoleClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import type { SupabaseClient } from '@supabase/supabase-js'
-
-// オーナーまたは現場管理責任者(manager)かどうか
-async function canManage(supabase: SupabaseClient, facilityId: string, userId: string): Promise<boolean> {
-  const { data: facility } = await supabase
-    .from('facilities')
-    .select('user_id')
-    .eq('id', facilityId)
-    .single()
-  if (facility?.user_id === userId) return true
-
-  const { data: member } = await supabase
-    .from('facility_members')
-    .select('role')
-    .eq('facility_id', facilityId)
-    .eq('user_id', userId)
-    .single()
-  return member?.role === 'manager'
-}
+import { canManage } from '@/lib/auth/can-manage'
 
 const VALID_ROLES = ['manager', 'cleaner']
 

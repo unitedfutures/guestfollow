@@ -3,7 +3,7 @@ import { verifyAuthenticationResponse } from '@simplewebauthn/server'
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server'
 import { createClient } from '@supabase/supabase-js'
 import { getRpID, getOrigin } from '@/lib/passkey/config'
-import { generatePin } from '@/lib/utils'
+import { generatePin, jstDate, jstEndOfDay } from '@/lib/utils'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -90,7 +90,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '予約情報が見つかりません' }, { status: 404 })
     }
 
-    const today = new Date().toISOString().split('T')[0]
+    // 日本時間の暦日で判定（UTCだと深夜0〜9時に前日扱いになり、当日チェックインを拒否してしまう）
+    const today = jstDate()
 
     if (booking.facility_id !== facility_id) {
       return NextResponse.json({ error: 'この施設の予約ではありません' }, { status: 400 })
@@ -121,7 +122,7 @@ export async function POST(request: Request) {
           .eq('booking_id', booking.id)
           .order('issued_at', { ascending: false })
           .limit(1)
-          .single()
+          .maybeSingle()
         if (code) return NextResponse.json({ pin_code: (code as { code: string }).code })
       }
       return NextResponse.json({ error: '事前登録が完了していません。' }, { status: 400 })
@@ -132,17 +133,21 @@ export async function POST(request: Request) {
     const pin_code = facilityData?.pin_code?.trim() || generatePin(4)
 
     const now = new Date().toISOString()
-    const checkoutDate = new Date(booking.checkout_date)
-    checkoutDate.setHours(23, 59, 59)
+    // 暗証番号の有効期限：チェックアウト日の JST 23:59:59（UTC基準だと翌朝9時まで有効になってしまう）
+    const checkoutDate = jstEndOfDay(booking.checkout_date)
 
-    // access_codes に保存
-    await supabase.from('access_codes').insert({
+    // access_codes に保存（記録できなければ暗証番号を出さない）
+    const { error: codeErr } = await supabase.from('access_codes').insert({
       booking_id: booking.id,
       facility_id,
       code: pin_code,
       issued_at: now,
       expires_at: checkoutDate.toISOString(),
     })
+    if (codeErr) {
+      console.error('[auth-verify] access_codes insert error:', codeErr)
+      return NextResponse.json({ error: '暗証番号の発行記録に失敗しました。お手数ですが再度お試しください。' }, { status: 500 })
+    }
 
     // guest_records のチェックイン完了日時を更新
     await supabase

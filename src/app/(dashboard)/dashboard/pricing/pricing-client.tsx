@@ -115,6 +115,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   }
 
   const setDay = (date: string, field: keyof DayVal, value: string) => {
+    if (value !== '' && !Number.isFinite(Number(value))) return
     setCal(prev => ({
       ...prev,
       [date]: { ...prev[date], [field]: value === '' ? null : Number(value) },
@@ -124,13 +125,24 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const saveRules = async () => {
     if (!facility) return
     setSavingRules(true)
-    await fetch('/api/facilities', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: facility.id, pricing_rules: rules }),
-    })
-    setSavingRules(false)
-    setMsg({ type: 'ok', text: '価格ルールを保存しました。' })
+    setMsg(null)
+    try {
+      const res = await fetch('/api/facilities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: facility.id, pricing_rules: rules }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setMsg({ type: 'err', text: data.error ?? '価格ルールの保存に失敗しました' })
+        return
+      }
+      setMsg({ type: 'ok', text: '価格ルールを保存しました。' })
+    } catch {
+      setMsg({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+    } finally {
+      setSavingRules(false)
+    }
   }
 
   const filledDays = days.filter(d => cal[d.date] && (cal[d.date].price != null || cal[d.date].minStay != null))
@@ -142,16 +154,21 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
 
     setApplying(true); setMsg(null)
     const payload = filledDays.map(d => ({ date: d.date, price: cal[d.date].price, minStay: cal[d.date].minStay }))
-    const res = await fetch('/api/pricing/apply', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ facility_id: facility.id, room_id: roomId, days: payload }),
-    })
-    const data = await res.json()
-    setApplying(false)
-    if (!res.ok) { setMsg({ type: 'err', text: data.error ?? '反映に失敗しました' }); return }
-    setMsg({ type: 'ok', text: `Beds24に ${data.updated} 日分を反映しました。反映がOTAに届くまで数分かかる場合があります。` })
-    loadCalendar()
+    try {
+      const res = await fetch('/api/pricing/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facility_id: facility.id, room_id: roomId, days: payload }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setMsg({ type: 'err', text: data.error ?? '反映に失敗しました' }); return }
+      setMsg({ type: 'ok', text: `Beds24に ${data.updated} 日分を反映しました。反映がOTAに届くまで数分かかる場合があります。` })
+      loadCalendar()
+    } catch {
+      setMsg({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+    } finally {
+      setApplying(false)
+    }
   }
 
   const changeMonth = (delta: number) => {
@@ -231,7 +248,11 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
               <div className="flex items-center gap-1 mt-1">
                 <span className="text-gray-400 text-sm">¥</span>
                 <input type="number" value={rules[key] as number}
-                  onChange={e => setRules(r => ({ ...r, [key]: Number(e.target.value) }))}
+                  onChange={e => {
+                    const n = Number(e.target.value)
+                    if (!Number.isFinite(n)) return
+                    setRules(r => ({ ...r, [key]: n }))
+                  }}
                   className="w-full rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-right focus:outline-none focus:ring-2 focus:ring-navy-300" />
               </div>
             </label>
@@ -246,7 +267,11 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
               <label key={i} className="flex flex-col items-center">
                 <span className={`text-[11px] ${i === 0 ? 'text-red-500' : i === 6 ? 'text-blue-500' : 'text-gray-500'}`}>{lb}</span>
                 <input type="number" min={1} value={rules.minStayByDow?.[String(i)] ?? rules.minStayDefault}
-                  onChange={e => setRules(r => ({ ...r, minStayByDow: { ...r.minStayByDow, [String(i)]: Math.max(1, Number(e.target.value) || 1) } }))}
+                  onChange={e => {
+                    const n = Number(e.target.value)
+                    if (!Number.isFinite(n)) return
+                    setRules(r => ({ ...r, minStayByDow: { ...r.minStayByDow, [String(i)]: Math.max(1, n || 1) } }))
+                  }}
                   className="w-12 rounded-lg border border-gray-300 px-1 py-1 text-sm text-center mt-0.5 focus:outline-none focus:ring-2 focus:ring-navy-300" />
               </label>
             ))}

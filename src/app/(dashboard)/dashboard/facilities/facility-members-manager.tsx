@@ -59,19 +59,28 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
   const [inviteError, setInviteError] = useState('')
   const [newInviteUrl, setNewInviteUrl] = useState('')
   const [copied, setCopied] = useState(false)
+  const [listError, setListError] = useState('')
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || ''
 
   const fetchData = useCallback(async () => {
     if (!canManage) return
     setLoading(true)
-    const res = await fetch(`/api/facility-invitations?facility_id=${facilityId}`)
-    if (res.ok) {
-      const data = await res.json()
+    try {
+      const res = await fetch(`/api/facility-invitations?facility_id=${facilityId}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setListError(data.error ?? 'メンバー情報の取得に失敗しました')
+        return
+      }
+      setListError('')
       setMembers(data.members ?? [])
       setInvitations(data.invitations ?? [])
+    } catch {
+      setListError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [facilityId, canManage])
 
   useEffect(() => {
@@ -83,20 +92,25 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
     setInviting(true)
     setInviteError('')
     setNewInviteUrl('')
-    const res = await fetch('/api/facility-invitations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ facility_id: facilityId, invited_email: inviteEmail.trim(), role: inviteRole }),
-    })
-    const data = await res.json()
-    if (!res.ok) {
-      setInviteError(data.error || '招待の作成に失敗しました')
-    } else {
+    try {
+      const res = await fetch('/api/facility-invitations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ facility_id: facilityId, invited_email: inviteEmail.trim(), role: inviteRole }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setInviteError(data.error || '招待の作成に失敗しました')
+        return
+      }
       setNewInviteUrl(data.invite_url)
       setInviteEmail('')
       fetchData()
+    } catch {
+      setInviteError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    } finally {
+      setInviting(false)
     }
-    setInviting(false)
   }
 
   const handleCopy = async (url: string) => {
@@ -105,15 +119,36 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
     setTimeout(() => setCopied(false), 2000)
   }
 
-  const handleDeleteMember = async (memberId: string) => {
-    if (!confirm('このメンバーを削除しますか？')) return
-    await fetch(`/api/facility-invitations?type=member&id=${memberId}`, { method: 'DELETE' })
-    fetchData()
+  const handleDeleteMember = async (member: Member) => {
+    if (!confirm(`このメンバー（${member.email}）を削除しますか？`)) return
+    setListError('')
+    try {
+      const res = await fetch(`/api/facility-invitations?type=member&id=${member.id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setListError(data.error ?? 'メンバーの削除に失敗しました')
+        return
+      }
+      fetchData()
+    } catch {
+      setListError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    }
   }
 
-  const handleCancelInvitation = async (invitationId: string) => {
-    await fetch(`/api/facility-invitations?type=invitation&id=${invitationId}`, { method: 'DELETE' })
-    fetchData()
+  const handleCancelInvitation = async (invitation: Invitation) => {
+    if (!confirm(`この招待（${invitation.invited_email}）をキャンセルしますか？`)) return
+    setListError('')
+    try {
+      const res = await fetch(`/api/facility-invitations?type=invitation&id=${invitation.id}`, { method: 'DELETE' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setListError(data.error ?? '招待のキャンセルに失敗しました')
+        return
+      }
+      fetchData()
+    } catch {
+      setListError('通信エラーが発生しました。時間をおいて再度お試しください。')
+    }
   }
 
   // 管理権限がない（清掃担当など）はロールバッジ表示のみ
@@ -225,6 +260,8 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
             )}
           </div>
 
+          {listError && <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{listError}</p>}
+
           {loading && (
             <div className="flex items-center justify-center py-4">
               <Loader2 size={20} className="animate-spin text-gray-400" />
@@ -260,7 +297,7 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
                           </div>
                         </div>
                         <button
-                          onClick={() => handleCancelInvitation(inv.id)}
+                          onClick={() => handleCancelInvitation(inv)}
                           className="shrink-0 p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
                           title="招待をキャンセル"
                         >
@@ -291,7 +328,7 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
                           </p>
                         </div>
                         <button
-                          onClick={() => handleDeleteMember(member.id)}
+                          onClick={() => handleDeleteMember(member)}
                           className="shrink-0 p-1.5 text-gray-400 hover:text-red-500 transition-colors rounded"
                           title="メンバーを削除"
                         >

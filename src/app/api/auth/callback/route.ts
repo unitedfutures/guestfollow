@@ -4,7 +4,10 @@ import { NextResponse } from 'next/server'
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url)
   const code = searchParams.get('code')
-  const redirect = searchParams.get('redirect') || '/dashboard'
+  // オープンリダイレクト対策：同一オリジンの相対パス（"/..."）のみ許可。
+  // "//evil.com" "@evil.com" ".evil.com" 等は既定の /dashboard に置き換える。
+  const rawRedirect = searchParams.get('redirect') || '/dashboard'
+  const redirect = /^\/(?![\/\\@.])[^\s]*$/.test(rawRedirect) ? rawRedirect : '/dashboard'
 
   if (code) {
     const supabase = await createClient()
@@ -29,5 +32,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.redirect(`${origin}${redirect}`)
+  return NextResponse.redirect(new URL(redirect, origin))
 }

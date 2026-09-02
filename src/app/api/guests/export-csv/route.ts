@@ -1,10 +1,15 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { getAccountAccess } from '@/lib/auth/roles'
 
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // 名簿CSVはオーナー/現場管理責任者のみ（清掃担当のみのアカウントは不可）
+  const { isCleanerOnly } = await getAccountAccess()
+  if (isCleanerOnly) return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
 
   const { data: bookings } = await supabase
     .from('bookings')

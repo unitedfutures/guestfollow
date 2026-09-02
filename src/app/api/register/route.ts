@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { randomBytes } from 'crypto'
 import { createClient } from '@supabase/supabase-js'
 
 // 公開エンドポイント（認証不要）— service_role で RLS をバイパス
@@ -7,19 +8,44 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+const ALLOWED_IMAGE: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' }
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const isDate = (v: unknown) => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v)
+
+// 画像の形式・サイズを検証し、拡張子（MIME由来）を返す。不正なら null
+function validateImage(file: File | null): { ok: true; ext: string } | { ok: false; error: string } | null {
+  if (!file || file.size === 0) return null
+  const ext = ALLOWED_IMAGE[file.type]
+  if (!ext) return { ok: false, error: '画像はJPEG/PNG/WebPのみ対応しています' }
+  if (file.size > MAX_IMAGE_BYTES) return { ok: false, error: '画像サイズは5MB以下にしてください' }
+  return { ok: true, ext }
+}
+
 export async function POST(request: Request) {
   try {
     const formData = await request.formData()
     const qrSlug      = formData.get('qr_slug') as string
-    const basic       = JSON.parse(formData.get('basic') as string)
-    const booking     = JSON.parse(formData.get('booking') as string)
-    const passport    = JSON.parse(formData.get('passport') as string)
+    let basic: Record<string, unknown>, booking: Record<string, unknown>, passport: Record<string, unknown>
+    try {
+      basic    = JSON.parse(String(formData.get('basic') ?? '{}'))
+      booking  = JSON.parse(String(formData.get('booking') ?? '{}'))
+      passport = JSON.parse(String(formData.get('passport') ?? '{}'))
+    } catch {
+      return NextResponse.json({ error: '入力データの形式が不正です' }, { status: 400 })
+    }
     const passportFile = formData.get('passport_image') as File | null
     const faceFile    = formData.get('face_photo') as File | null
 
-    if (!qrSlug || !basic.full_name || !basic.email || !booking.checkin_date || !booking.checkout_date) {
+    if (!qrSlug || !basic?.full_name || !basic?.email || !isDate(booking?.checkin_date) || !isDate(booking?.checkout_date)) {
       return NextResponse.json({ error: '必須項目が不足しています' }, { status: 400 })
     }
+    if (String(booking.checkout_date) <= String(booking.checkin_date)) {
+      return NextResponse.json({ error: 'チェックアウト日はチェックイン日より後にしてください' }, { status: 400 })
+    }
+    const passportCheck = validateImage(passportFile)
+    if (passportCheck && !passportCheck.ok) return NextResponse.json({ error: passportCheck.error }, { status: 400 })
+    const faceCheck = validateImage(faceFile)
+    if (faceCheck && !faceCheck.ok) return NextResponse.json({ error: faceCheck.error }, { status: 400 })
 
     // 施設を qr_slug で検索
     const { data: facility, error: facilityError } = await supabase
@@ -52,12 +78,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: bookingError?.message ?? '予約の作成に失敗しました' }, { status: 500 })
     }
 
-    // パスポート画像アップロード
+    // パスポート画像アップロード（拡張子はMIME由来。ファイル名は信用しない）
     let passport_image_path: string | null = null
-    if (passportFile && basic.is_foreign) {
+    if (passportFile && passportCheck?.ok && basic.is_foreign) {
       const arrayBuffer = await passportFile.arrayBuffer()
-      const ext = passportFile.name.split('.').pop() ?? 'jpg'
-      const path = `${newBooking.id}/${Date.now()}.${ext}`
+      const path = `${newBooking.id}/${Date.now()}.${passportCheck.ext}`
       const { error: uploadError } = await supabase.storage
         .from('passport-images')
         .upload(path, Buffer.from(arrayBuffer), { contentType: passportFile.type, upsert: true })
@@ -66,15 +91,17 @@ export async function POST(request: Request) {
 
     // 顔写真アップロード
     let face_photo_path: string | null = null
-    if (faceFile) {
+    if (faceFile && faceCheck?.ok) {
       const arrayBuffer = await faceFile.arrayBuffer()
-      const ext = faceFile.name.split('.').pop() ?? 'jpg'
-      const path = `${newBooking.id}/face_${Date.now()}.${ext}`
+      const path = `${newBooking.id}/face_${Date.now()}.${faceCheck.ext}`
       const { error: uploadError } = await supabase.storage
         .from('passport-images')
         .upload(path, Buffer.from(arrayBuffer), { contentType: faceFile.type, upsert: true })
       if (!uploadError) face_photo_path = path
     }
+
+    // パスキー登録をこのブラウザ（本人）に紐づけるためのセットアップトークン
+    const passkeySetupToken = randomBytes(24).toString('hex')
 
     // IPアドレス取得
     const ip = request.headers.get('x-forwarded-for') ?? request.headers.get('x-real-ip') ?? 'unknown'
@@ -102,6 +129,7 @@ export async function POST(request: Request) {
         next_destination:     booking.next_destination || null,
         terms_agreed_at:      new Date().toISOString(),
         terms_ip_address:     ip,
+        passkey_setup_token:  passkeySetupToken,
       })
       .select('id')
       .single()
@@ -110,7 +138,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: recordError?.message ?? 'ゲスト情報の保存に失敗しました' }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true, guest_record_id: guestRecord.id })
+    return NextResponse.json({ success: true, guest_record_id: guestRecord.id, passkey_setup_token: passkeySetupToken })
   } catch (e) {
     console.error('[/api/register] error:', e)
     return NextResponse.json({ error: 'サーバーエラーが発生しました' }, { status: 500 })
