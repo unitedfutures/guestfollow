@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     .eq('id', facility_id)
     .single()
   if (!facility) return NextResponse.json({ error: '施設が見つかりません' }, { status: 404 })
-  // 価格の書き込みはオーナー/現場管理責任者のみ（清掃担当は不可）
+  // 価格の書き込みはオーナー/現場管理責任者のみ（清掃担当者は不可）
   if (!(await canManage(supabase, facility.id, user.id))) {
     return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
   }

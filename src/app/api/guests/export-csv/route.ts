@@ -7,7 +7,7 @@ export async function GET() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // 名簿CSVはオーナー/現場管理責任者のみ（清掃担当のみのアカウントは不可）
+  // 名簿CSVはオーナー/現場管理責任者のみ（清掃担当者のみのアカウントは不可）
   const { isCleanerOnly } = await getAccountAccess()
   if (isCleanerOnly) return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
 

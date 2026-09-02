@@ -8,7 +8,7 @@ type Role = 'manager' | 'cleaner'
 const ROLE_LABELS: Record<string, string> = {
   owner: 'オーナー',
   manager: '現場管理責任者',
-  cleaner: '清掃担当',
+  cleaner: '清掃担当者',
 }
 const ROLE_BADGE: Record<string, string> = {
   owner: 'bg-navy-100 text-navy-700',
@@ -151,7 +151,7 @@ export function FacilityMembersManager({ facilityId, canManage, myRole }: Props)
     }
   }
 
-  // 管理権限がない（清掃担当など）はロールバッジ表示のみ
+  // 管理権限がない（清掃担当者など）はロールバッジ表示のみ
   if (!canManage) {
     return (
       <div className="border border-gray-200 rounded-xl overflow-hidden">

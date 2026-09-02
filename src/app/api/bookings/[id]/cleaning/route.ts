@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 
-// 予約に清掃担当を割り当て（null で解除）
+// 予約に清掃担当者を割り当て（null で解除）
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }

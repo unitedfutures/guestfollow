@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 
 export type AccountAccess = {
   hasAny: boolean          // 何らかの施設に関与しているか
-  isCleanerOnly: boolean   // 全ての関与が清掃担当のみ（オーナー/現場管理責任者ではない）
+  isCleanerOnly: boolean   // 全ての関与が清掃担当者のみ（オーナー/現場管理責任者ではない）
 }
 
 // ログインユーザーのアカウント全体のアクセス区分を判定する

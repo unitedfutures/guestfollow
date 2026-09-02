@@ -384,7 +384,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
   const [searchText, setSearchText] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  // 予約ID → 清掃担当ID のローカル上書き（割り当て変更を即時反映）
+  // 予約ID → 清掃担当者ID のローカル上書き（割り当て変更を即時反映）
   const [cleaningMap, setCleaningMap] = useState<Record<string, string | null>>({})
   const [cleaningError, setCleaningError] = useState('')
 
@@ -409,7 +409,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
       const data = await res.json().catch(() => ({}))
       if (!res.ok) {
         revert()
-        setCleaningError(data.error ?? '清掃担当の割り当てに失敗しました')
+        setCleaningError(data.error ?? '清掃担当者の割り当てに失敗しました')
       }
     } catch {
       revert()
@@ -665,7 +665,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
             >
               チェックイン日 <ArrowUpDown size={11} />
             </button>
-            <div>清掃担当</div>
+            <div>清掃担当者</div>
             <div>ゲスト</div>
             {!cleanerMode && <div className="text-center">名簿</div>}
             {!cleanerMode && <div className="text-center">チェックイン</div>}
@@ -728,9 +728,9 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
                       <span className="text-gray-400"> 〜 {formatDate(b.checkout_date)}</span>
                     </div>
 
-                    {/* 清掃担当プルダウン（行の展開を阻害しないよう伝播停止） */}
+                    {/* 清掃担当者プルダウン（行の展開を阻害しないよう伝播停止） */}
                     <div onClick={e => e.stopPropagation()} className="flex items-center gap-1.5">
-                      <span className="lg:hidden text-xs text-gray-400 shrink-0">清掃担当:</span>
+                      <span className="lg:hidden text-xs text-gray-400 shrink-0">清掃担当者:</span>
                       <div className="relative flex-1 lg:flex-none lg:w-full">
                         <select
                           value={cleaningMap[b.id] !== undefined ? (cleaningMap[b.id] ?? '') : (b.cleaning_staff_id ?? '')}

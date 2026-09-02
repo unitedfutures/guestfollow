@@ -14,7 +14,7 @@ export default async function SettingsPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
-  const [{ data: profile }, { data: otaAccounts }, { data: cleaningStaff }] = await Promise.all([
+  const [{ data: profile }, { data: otaAccounts }, { data: facilities }] = await Promise.all([
     supabase
       .from('profiles')
       .select('company_name')
@@ -25,9 +25,10 @@ export default async function SettingsPage() {
       .select('id, provider, label, created_at, api_key, refresh_token')
       .eq('user_id', user!.id)
       .order('created_at', { ascending: true }),
+    // 清掃担当者の招待先として選ぶため、自分がオーナーの施設を渡す
     supabase
-      .from('cleaning_staff')
-      .select('id, name, active, created_at')
+      .from('facilities')
+      .select('id, name')
       .eq('user_id', user!.id)
       .order('created_at', { ascending: true }),
   ])
@@ -68,7 +69,7 @@ export default async function SettingsPage() {
           }))}
         />
 
-        <CleaningStaffManager initialStaff={cleaningStaff ?? []} />
+        <CleaningStaffManager facilities={facilities ?? []} />
 
         <Card>
           <CardHeader>

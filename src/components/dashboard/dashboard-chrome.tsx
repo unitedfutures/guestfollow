@@ -56,7 +56,7 @@ export function DashboardChrome({
       <div className="px-6 py-5 border-b border-navy-600 flex items-center justify-between">
         <div>
           <Logo variant="default" size="sm" />
-          <p className="text-xs text-navy-100 mt-0.5">{cleanerOnly ? '清掃担当' : '管理ダッシュボード'}</p>
+          <p className="text-xs text-navy-100 mt-0.5">{cleanerOnly ? '清掃担当者' : '管理ダッシュボード'}</p>
         </div>
         {/* モバイルの閉じるボタン */}
         <button
