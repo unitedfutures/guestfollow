@@ -3,8 +3,7 @@
 import { useState, useMemo } from 'react'
 import { Filter, ChevronDown, CalendarDays, CalendarRange, XCircle, TrendingUp, Download, FileText, Info, X } from 'lucide-react'
 import { formatDate, formatYen as yen, jstDate } from '@/lib/utils'
-import { ChannelBadge, channelLabel } from '@/components/dashboard/channel-badge'
-import { OtaBadge } from '@/components/dashboard/ota-badge'
+import { OtaChannelBadge, otaLabel } from '@/components/dashboard/channel-badge'
 
 type Booking = {
   id: string
@@ -47,7 +46,7 @@ const dateOfBy = (b: Booking, basis: DateBasis) => (basis === 'checkout' ? b.che
 
 // レポートの「OTA」欄はAirbnb・Booking.comなどの予約元を表示する
 // （Beds24 / Airhost はサイトコントローラーであってOTAではない）
-const otaLabelOf = (b: Booking) => channelLabel(b.ota_channel) ?? (b.ota_source ? '不明' : '手動')
+const otaLabelOf = (b: Booking) => otaLabel(b.ota_channel, b.ota_source)
 const normStatus = (s: string | null) => (s === 'cancelled' ? 'cancelled' : 'confirmed')
 
 // ファイル名に使えない文字を除去
@@ -520,8 +519,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                     {/* 施設 / OTA */}
                     <div className="flex items-center gap-1.5 flex-wrap min-w-0">
                       <span className="text-sm font-semibold text-gray-900 truncate">{b.facilities?.name ?? '—'}</span>
-                      <ChannelBadge channel={b.ota_channel} />
-                      <OtaBadge source={b.ota_source} />
+                      <OtaChannelBadge channel={b.ota_channel} source={b.ota_source} />
                       {cancelled && <span className="text-[10px] font-bold text-red-600 bg-red-50 border border-red-200 rounded px-1.5 py-0.5">キャンセル</span>}
                     </div>
 

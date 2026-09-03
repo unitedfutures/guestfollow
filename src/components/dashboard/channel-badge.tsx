@@ -18,6 +18,24 @@ export function channelLabel(channel: string | null): string | null {
   return CHANNEL_STYLES.find(s => s.match.test(channel))?.label ?? channel
 }
 
+/**
+ * 予約元OTAのラベル。取得できない場合は、手入力の予約なら「手動」、
+ * サイトコントローラー経由でチャネル不明なら「不明」。
+ */
+export function otaLabel(channel: string | null, source: string | null): string {
+  return channelLabel(channel) ?? (source ? '不明' : '手動')
+}
+
+/** 予約元OTAのバッジ。チャネルが無い予約でも「手動」「不明」を必ず表示する */
+export function OtaChannelBadge({ channel, source }: { channel: string | null; source: string | null }) {
+  if (channel) return <ChannelBadge channel={channel} />
+  return (
+    <span className="text-[10px] font-bold text-gray-400 bg-gray-50 border border-gray-200 rounded px-1.5 py-0.5 shrink-0">
+      {source ? '不明' : '手動'}
+    </span>
+  )
+}
+
 export function ChannelBadge({ channel }: { channel: string | null }) {
   if (!channel) return null
   const hit = CHANNEL_STYLES.find(s => s.match.test(channel))

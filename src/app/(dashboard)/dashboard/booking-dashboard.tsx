@@ -12,8 +12,7 @@ import {
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { BookingForm } from './booking-form'
 import { CsvDownloadButton } from './csv-download-button'
-import { ChannelBadge } from '@/components/dashboard/channel-badge'
-import { OtaBadge } from '@/components/dashboard/ota-badge'
+import { OtaChannelBadge } from '@/components/dashboard/channel-badge'
 
 // ─── 型 ────────────────────────────────────────────────────────────────────
 
@@ -701,8 +700,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
                           <span className="text-sm font-semibold text-gray-900 truncate">
                             {b.facilities?.name ?? '—'}
                           </span>
-                          <ChannelBadge channel={b.ota_channel} />
-                          <OtaBadge source={b.ota_source} />
+                          <OtaChannelBadge channel={b.ota_channel} source={b.ota_source} />
                           {todayFlag && (
                             <span className="text-[10px] font-bold text-navy-600 bg-navy-100 rounded px-1.5 py-0.5 shrink-0">TODAY</span>
                           )}
