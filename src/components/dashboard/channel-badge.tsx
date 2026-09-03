@@ -12,9 +12,15 @@ const CHANNEL_STYLES: { match: RegExp; label: string; className: string }[] = [
   { match: /direct|直接|website|自社/i, label: '直接予約',      className: 'text-gray-600 bg-gray-50 border-gray-200' },
 ]
 
+// Beds24からは予約受付用のメールアドレスがチャネル名として入ってくることがある
+// （例：contact@stellaresort.jp）。長くて読みにくいのでドメインだけを表示する。
+const EMAIL_RE = /^[^\s@]+@([^\s@]+\.[^\s@]+)$/
+
 /** OTA名の表示ラベル（Airbnb / Booking.com など）。未設定なら null */
 export function channelLabel(channel: string | null): string | null {
   if (!channel) return null
+  const email = channel.trim().match(EMAIL_RE)
+  if (email) return email[1]
   return CHANNEL_STYLES.find(s => s.match.test(channel))?.label ?? channel
 }
 
@@ -39,7 +45,7 @@ export function OtaChannelBadge({ channel, source }: { channel: string | null; s
 export function ChannelBadge({ channel }: { channel: string | null }) {
   if (!channel) return null
   const hit = CHANNEL_STYLES.find(s => s.match.test(channel))
-  const label = hit?.label ?? channel
+  const label = channelLabel(channel)
   const className = hit?.className ?? 'text-indigo-700 bg-indigo-50 border-indigo-200'
   return (
     <span className={`text-[10px] font-bold border rounded px-1.5 py-0.5 shrink-0 ${className}`}>
