@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { Filter, ChevronDown, CalendarDays, CalendarRange, XCircle, TrendingUp, Download, FileText, Info, X } from 'lucide-react'
 import { formatDate, formatYen as yen, jstDate } from '@/lib/utils'
 import { OtaChannelBadge, otaLabel } from '@/components/dashboard/channel-badge'
+import { downloadReportPdf, type ReportRow } from '@/lib/reports/report-pdf'
 
 type Booking = {
   id: string
@@ -52,99 +53,19 @@ const normStatus = (s: string | null) => (s === 'cancelled' ? 'cancelled' : 'con
 // ファイル名に使えない文字を除去
 const sanitizeName = (s: string) => s.replace(/[\\/:*?"<>|]/g, '').trim()
 
-const esc = (s: unknown) =>
-  String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
-
-// PDFの中身を組み立てる（通常の出力・月次レポートで共用）
-function buildReportHtml(opts: {
-  rows: Booking[]
-  title: string
-  fileName: string
-  facilityName: string
-  statusLabel: string
-  rangeLabel: string
-}): string {
-  const { rows, title, fileName, facilityName, statusLabel, rangeLabel } = opts
-  const totalSales = rows.reduce((s, b) => s + salesOf(b), 0)
-  const totalFee = rows.reduce((s, b) => s + feeOf(b), 0)
-  const totalProfit = totalSales - totalFee
-  const count = rows.length
-  const today = new Date().toLocaleDateString('ja-JP')
-
-  const rowsHtml = rows.map(b => `
-      <tr class="${b.ota_status === 'cancelled' ? 'cancelled' : ''}">
-        <td>${esc(b.facilities?.name ?? '—')}</td>
-        <td class="ota">${esc(otaLabelOf(b))}</td>
-        <td>${esc(formatDate(b.checkin_date))} 〜 ${esc(formatDate(b.checkout_date))}</td>
-        <td>${esc(b.guest_name ?? '—')}</td>
-        <td class="c">${esc(b.num_guests)}</td>
-        <td class="r">${yen(salesOf(b))}</td>
-        <td class="r fee">${feeOf(b) ? '−' + yen(feeOf(b)) : '—'}</td>
-        <td class="r profit">${yen(profitOf(b))}</td>
-      </tr>`).join('')
-
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<title>${esc(fileName)}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: 'Hiragino Sans','Helvetica Neue',Arial,sans-serif; color:#1f2937; margin:32px; font-size:12px; }
-  .head { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1e293b; padding-bottom:12px; margin-bottom:16px; }
-  h1 { font-size:20px; margin:0; color:#1e293b; letter-spacing:.04em; }
-  .brand { font-size:12px; color:#6366f1; font-weight:700; letter-spacing:.1em; margin-bottom:2px; }
-  .meta { text-align:right; font-size:11px; color:#6b7280; line-height:1.7; }
-  .cards { display:flex; gap:12px; margin-bottom:18px; }
-  .card { flex:1; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
-  .card .l { font-size:10px; color:#6b7280; margin-bottom:4px; }
-  .card .v { font-size:18px; font-weight:800; }
-  .card.sales .v { color:#1e293b; } .card.fee .v { color:#b45309; } .card.profit { background:#eef2ff; border-color:#c7d2fe; } .card.profit .v { color:#4338ca; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { padding:7px 8px; border-bottom:1px solid #e5e7eb; text-align:left; }
-  th { background:#f8fafc; font-size:10px; color:#475569; text-transform:none; border-bottom:1.5px solid #cbd5e1; }
-  td.r,th.r { text-align:right; white-space:nowrap; } td.c,th.c { text-align:center; }
-  td.ota { color:#6b7280; } td.fee { color:#b45309; } td.profit { font-weight:700; color:#4338ca; }
-  tr.cancelled td { color:#9ca3af; text-decoration:line-through; }
-  tfoot td { font-weight:800; border-top:2px solid #1e293b; background:#f8fafc; }
-  .note { margin-top:14px; font-size:10px; color:#6b7280; line-height:1.7; }
-  @media print { body { margin:12mm; } }
-</style></head><body>
-  <div class="head">
-    <div><div class="brand">GuestFollow</div><h1>${esc(title)}</h1></div>
-    <div class="meta">
-      出力日：${today}<br>施設：${esc(facilityName)}／ステータス：${esc(statusLabel)}<br>期間：${esc(rangeLabel)}
-    </div>
-  </div>
-  <div class="cards">
-    <div class="card sales"><div class="l">売上（総額）</div><div class="v">${yen(totalSales)}</div></div>
-    <div class="card fee"><div class="l">OTA手数料</div><div class="v">−${yen(totalFee)}</div></div>
-    <div class="card profit"><div class="l">粗利益（売上−手数料）</div><div class="v">${yen(totalProfit)}</div></div>
-    <div class="card"><div class="l">件数</div><div class="v">${count}件</div></div>
-  </div>
-  <table>
-    <thead><tr>
-      <th>施設</th><th>OTA</th><th>チェックイン〜アウト</th><th>予約名</th><th class="c">人数</th>
-      <th class="r">売上</th><th class="r">OTA手数料</th><th class="r">粗利益</th>
-    </tr></thead>
-    <tbody>${rowsHtml || '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:24px;">該当する予約がありません</td></tr>'}</tbody>
-    <tfoot><tr>
-      <td colspan="5">合計（${count}件）</td>
-      <td class="r">${yen(totalSales)}</td><td class="r">−${yen(totalFee)}</td><td class="r">${yen(totalProfit)}</td>
-    </tr></tfoot>
-  </table>
-  <div class="note">
-    ※ 売上＝OTA予約の総額。OTA手数料＝サイトコントローラー（Beds24）から取得した手数料の実額。粗利益＝売上−OTA手数料。<br>
-    ※ 実際の入金額・振込タイミングはOTAにより異なります（Airbnbは粗利益が入金、Booking.comは売上が入金され後日手数料を支払い）。
-  </div>
-  <script>window.onload=function(){window.print();}</script>
-</body></html>`
-}
-
-// 別ウィンドウで開いて印刷ダイアログ（PDF保存）を出す
-function printHtml(html: string) {
-  const w = window.open('', '_blank')
-  if (!w) { alert('ポップアップがブロックされました。ブラウザのポップアップを許可してください。'); return }
-  w.document.open()
-  w.document.write(html)
-  w.document.close()
+// PDFは印刷ダイアログを経由せず、その場でダウンロードする（実装は lib/reports/report-pdf）
+function toReportRows(rows: Booking[]): ReportRow[] {
+  return rows.map(b => ({
+    facility: b.facilities?.name ?? '—',
+    ota: otaLabelOf(b),
+    stay: `${formatDate(b.checkin_date)} 〜 ${formatDate(b.checkout_date)}`,
+    guest: b.guest_name ?? '—',
+    guests: b.num_guests,
+    sales: salesOf(b),
+    fee: feeOf(b),
+    profit: profitOf(b),
+    cancelled: b.ota_status === 'cancelled',
+  }))
 }
 
 export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; facilities: Facility[] }) {
@@ -161,6 +82,24 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
   const [showMonthly, setShowMonthly] = useState(false)
   const [monthlyStatus, setMonthlyStatus] = useState<StatusFilter>('all')
   const [monthlyBasis, setMonthlyBasis] = useState<DateBasis>('checkout')
+
+  // PDF出力中のキー（'list' もしくは '月:施設ID'）とエラー表示
+  const [exportingKey, setExportingKey] = useState<string | null>(null)
+  const [exportError, setExportError] = useState('')
+
+  // PDFの組み立てには少し時間がかかるため、対象ごとに進行状態を出す
+  const runExport = async (key: string, rows: ReportRow[], meta: Omit<Parameters<typeof downloadReportPdf>[1], never>) => {
+    if (exportingKey) return
+    setExportingKey(key)
+    setExportError('')
+    try {
+      await downloadReportPdf(rows, meta)
+    } catch (e) {
+      setExportError(`PDFの作成に失敗しました（${e instanceof Error ? e.message : String(e)}）`)
+    } finally {
+      setExportingKey(null)
+    }
+  }
 
   // 「YYYY-MM」を受け取り、その月の1日〜末日を日付範囲に設定する
   const applyMonth = (month: string) => {
@@ -276,7 +215,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
   }, [bookings, monthlyStatus, monthlyBasis])
 
   // 指定の月・施設（null なら全施設）でPDFを出力する
-  const outputMonthly = (ym: string, facilityId: string | null) => {
+  const outputMonthly = async (ym: string, facilityId: string | null) => {
     const [y, m] = ym.split('-').map(Number)
     const lastDay = new Date(y, m, 0).getDate()
     const from = `${ym}-01`
@@ -295,26 +234,22 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
       ? (facilities.find(f => f.id === facilityId)?.name ?? '施設')
       : '全施設'
 
-    printHtml(buildReportHtml({
-      rows,
+    await runExport(`${ym}:${facilityId ?? 'all'}`, toReportRows(rows), {
       title: `月次売上レポート（${y}年${m}月）`,
       fileName: `売上_${sanitizeName(facName)}_${ym.replace('-', '')}`,
       facilityName: facilityId ? facName : 'すべての施設',
       statusLabel: STATUS_LABEL[monthlyStatus],
       rangeLabel: `${from} 〜 ${to}（${BASIS_LABEL[monthlyBasis]}基準）`,
-    }))
+    })
   }
 
-  const handlePdf = () => {
-    printHtml(buildReportHtml({
-      rows: filtered,
-      title: '売上レポート',
-      fileName: exportBaseName,
-      facilityName,
-      statusLabel,
-      rangeLabel,
-    }))
-  }
+  const handlePdf = () => runExport('list', toReportRows(filtered), {
+    title: '売上レポート',
+    fileName: exportBaseName,
+    facilityName,
+    statusLabel,
+    rangeLabel,
+  })
 
   return (
     <div className="p-6 lg:p-8 space-y-6">
@@ -484,12 +419,17 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
           </button>
           <button
             onClick={handlePdf}
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 transition-colors"
+            disabled={exportingKey !== null}
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50 transition-colors"
           >
-            <FileText size={15} /> PDF出力
+            <FileText size={15} /> {exportingKey === 'list' ? '作成中…' : 'PDF出力'}
           </button>
         </div>
       </div>
+
+      {exportError && exportingKey === null && (
+        <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2">{exportError}</p>
+      )}
 
       {/* 一覧 */}
       {filtered.length > 0 ? (
@@ -605,7 +545,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                 <div>
                   <h3 className="text-lg font-bold text-gray-900">月次レポート出力</h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    出力したい月と施設のマスをクリックするとPDFが開きます（印刷画面から「PDFに保存」）
+                    出力したい月と施設のマスをクリックするとPDFがダウンロードされます
                   </p>
                 </div>
               </div>
@@ -682,7 +622,8 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                                   {cell ? (
                                     <button
                                       onClick={() => outputMonthly(ym, f.id)}
-                                      className="w-full rounded-lg px-2 py-1.5 hover:bg-navy-50 border border-transparent hover:border-navy-200 transition-colors group"
+                                      disabled={exportingKey !== null}
+                                      className="w-full rounded-lg px-2 py-1.5 hover:bg-navy-50 border border-transparent hover:border-navy-200 disabled:opacity-40 transition-colors group"
                                       title={`${Number(y)}年${Number(m)}月 ／ ${f.name} のレポートを出力`}
                                     >
                                       <span className="block text-sm font-semibold text-gray-900 group-hover:text-navy-700 whitespace-nowrap">
@@ -699,7 +640,8 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                             <td className="px-1.5 py-1.5 border-b border-gray-100 text-right bg-navy-50/40">
                               <button
                                 onClick={() => outputMonthly(ym, null)}
-                                className="w-full rounded-lg px-2 py-1.5 hover:bg-navy-100 border border-transparent hover:border-navy-300 transition-colors group"
+                                disabled={exportingKey !== null}
+                                className="w-full rounded-lg px-2 py-1.5 hover:bg-navy-100 border border-transparent hover:border-navy-300 disabled:opacity-40 transition-colors group"
                                 title={`${Number(y)}年${Number(m)}月 ／ 全施設のレポートを出力`}
                               >
                                 <span className="block text-sm font-bold text-navy-700 whitespace-nowrap">
@@ -714,6 +656,12 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                     </tbody>
                   </table>
                 </div>
+                {exportError && (
+                  <p className="text-xs text-red-600 bg-red-50 rounded-lg px-3 py-2 mt-3">{exportError}</p>
+                )}
+                {exportingKey && exportingKey !== 'list' && (
+                  <p className="text-xs text-navy-600 bg-navy-50 rounded-lg px-3 py-2 mt-3">PDFを作成しています…</p>
+                )}
                 <p className="text-xs text-gray-400 mt-3 leading-relaxed">
                   ※ 金額は各マスの売上（総額）です。予約がある月のみ表示しています。「—」の月・施設は対象の予約がありません。
                 </p>
