@@ -1,9 +1,15 @@
 // 売上レポートのPDF出力。
 // 印刷ダイアログを経由せず、クリックしたその場でPDFをダウンロードする。
 //
-// 方式：レポートをA4サイズのHTMLとして1ページずつ組み立て、
-//       非表示のiframeで描画 → 画像化 → PDFに1ページずつ貼る。
-// 行の途中でページが切れないよう、ページごとの行数をこちら側で決めて分割する。
+// 文字は画像ではなくテキストとして埋め込むため、PDF内で検索・コピーができる。
+// 日本語フォント（IBM Plex Sans JP / OFL）は /public/fonts に置き、出力時にだけ読み込む。
+//
+// ※ pdf-lib の subset:true は日本語フォントだと字形の対応表が壊れて
+//    ほとんどの文字が表示されなくなるため使わない（既知の不具合）。
+//    フォントを丸ごと埋め込むぶん1ファイル1.5MB前後になるが、
+//    確実に全文字が出ること・検索できることを優先している。
+
+import type { PDFPage, RGB } from 'pdf-lib'
 
 export type ReportRow = {
   facility: string
@@ -25,200 +31,88 @@ export type ReportMeta = {
   rangeLabel: string
 }
 
-// A4（96dpi換算）
-const PAGE_W = 794
-const PAGE_H = 1123
+const FONT_URL = '/fonts/IBMPlexSansJP-Regular.ttf'
 
-// 1ページに載せる明細行数。1ページ目は見出しと集計カードがある分だけ少なくする。
-// 最終ページには合計行と注記が入るため、余裕をもたせた値にしている。
-const ROWS_FIRST_PAGE = 20
-const ROWS_OTHER_PAGE = 28
+// A4（ポイント）
+const PAGE_W = 595.28
+const PAGE_H = 841.89
+const MARGIN = 40
+const CONTENT_W = PAGE_W - MARGIN * 2
+
+// 明細テーブルの列幅（合計が CONTENT_W になるようにする）
+const COLS = [
+  { key: 'facility', label: '施設',            w: 92, align: 'left' },
+  { key: 'ota',      label: 'OTA',             w: 68, align: 'left' },
+  { key: 'stay',     label: 'チェックイン〜アウト', w: 96, align: 'left' },
+  { key: 'guest',    label: '予約名',          w: 79, align: 'left' },
+  { key: 'guests',   label: '人数',            w: 26, align: 'center' },
+  { key: 'sales',    label: '売上',            w: 52, align: 'right' },
+  { key: 'fee',      label: 'OTA手数料',       w: 52, align: 'right' },
+  { key: 'profit',   label: '粗利益',          w: 50, align: 'right' },
+] as const
+
+const ROW_H = 15
+const HEAD_H = 17
+const FS_ROW = 7.5
+const FS_HEAD = 7
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString('ja-JP')}`
 
-const esc = (s: unknown) =>
-  String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] as string))
-
-const STYLES = `
-  * { box-sizing: border-box; -webkit-print-color-adjust: exact; }
-  html, body { margin:0; padding:0; }
-  body { font-family: 'Hiragino Sans','Hiragino Kaku Gothic ProN','Yu Gothic','Meiryo','Helvetica Neue',Arial,sans-serif;
-         color:#1f2937; font-size:12px; background:#fff; width:${PAGE_W}px; height:${PAGE_H}px; padding:30px; }
-  .head { display:flex; justify-content:space-between; align-items:flex-end; border-bottom:2px solid #1e293b; padding-bottom:12px; margin-bottom:16px; }
-  h1 { font-size:20px; margin:0; color:#1e293b; letter-spacing:.04em; }
-  .brand { font-size:12px; color:#6366f1; font-weight:700; letter-spacing:.1em; margin-bottom:2px; }
-  .meta { text-align:right; font-size:11px; color:#6b7280; line-height:1.7; }
-  .cards { display:flex; gap:12px; margin-bottom:18px; }
-  .card { flex:1; border:1px solid #e5e7eb; border-radius:10px; padding:12px 14px; }
-  .card .l { font-size:10px; color:#6b7280; margin-bottom:4px; }
-  .card .v { font-size:18px; font-weight:800; }
-  .card.sales .v { color:#1e293b; } .card.fee .v { color:#b45309; }
-  .card.profit { background:#eef2ff; border-color:#c7d2fe; } .card.profit .v { color:#4338ca; }
-  table { width:100%; border-collapse:collapse; }
-  th,td { padding:7px 8px; border-bottom:1px solid #e5e7eb; text-align:left; }
-  th { background:#f8fafc; font-size:10px; color:#475569; border-bottom:1.5px solid #cbd5e1; }
-  td.r,th.r { text-align:right; white-space:nowrap; } td.c,th.c { text-align:center; }
-  td.ota { color:#6b7280; } td.fee { color:#b45309; } td.profit { font-weight:700; color:#4338ca; }
-  tr.cancelled td { color:#9ca3af; text-decoration:line-through; }
-  tfoot td { font-weight:800; border-top:2px solid #1e293b; background:#f8fafc; }
-  .note { margin-top:14px; font-size:10px; color:#6b7280; line-height:1.7; }
-  .pager { margin-top:10px; text-align:right; font-size:10px; color:#9ca3af; }
-  .subhead { font-size:11px; color:#6b7280; border-bottom:1px solid #cbd5e1; padding-bottom:8px; margin-bottom:12px; }
-`
-
-const THEAD = `<thead><tr>
-  <th>施設</th><th>OTA</th><th>チェックイン〜アウト</th><th>予約名</th><th class="c">人数</th>
-  <th class="r">売上</th><th class="r">OTA手数料</th><th class="r">粗利益</th>
-</tr></thead>`
-
-const NOTE = `<div class="note">
-  ※ 売上＝OTA予約の総額。OTA手数料＝サイトコントローラー（Beds24）から取得した手数料の実額。粗利益＝売上−OTA手数料。<br>
-  ※ 実際の入金額・振込タイミングはOTAにより異なります（Airbnbは粗利益が入金、Booking.comは売上が入金され後日手数料を支払い）。
-</div>`
-
-function rowHtml(r: ReportRow): string {
-  return `<tr class="${r.cancelled ? 'cancelled' : ''}">
-    <td>${esc(r.facility)}</td>
-    <td class="ota">${esc(r.ota)}</td>
-    <td>${esc(r.stay)}</td>
-    <td>${esc(r.guest)}</td>
-    <td class="c">${esc(r.guests)}</td>
-    <td class="r">${yen(r.sales)}</td>
-    <td class="r fee">${r.fee ? '−' + yen(r.fee) : '—'}</td>
-    <td class="r profit">${yen(r.profit)}</td>
-  </tr>`
-}
-
-// 明細行はゲスト名や施設名が折り返して高さが変わるため、
-// 行数を決め打ちにせず、実際に描画した高さを測って1ページに入る分だけ載せる。
-const APPROX_ROW_H = 32
-
-/** A4 1ページ分のHTMLを組み立てる */
-function pageHtml(
-  pageRows: ReportRow[],
-  meta: ReportMeta,
-  totals: { sales: number; fee: number; profit: number; count: number },
-  pageIndex: number,
-  pageCount: number
-): string {
-  const isFirst = pageIndex === 0
-  const isLast = pageIndex === pageCount - 1
-  const today = new Date().toLocaleDateString('ja-JP')
-
-  const header = isFirst
-    ? `<div class="head">
-         <div><div class="brand">GuestFollow</div><h1>${esc(meta.title)}</h1></div>
-         <div class="meta">
-           出力日：${today}<br>施設：${esc(meta.facilityName)}／ステータス：${esc(meta.statusLabel)}<br>期間：${esc(meta.rangeLabel)}
-         </div>
-       </div>
-       <div class="cards">
-         <div class="card sales"><div class="l">売上（総額）</div><div class="v">${yen(totals.sales)}</div></div>
-         <div class="card fee"><div class="l">OTA手数料</div><div class="v">−${yen(totals.fee)}</div></div>
-         <div class="card profit"><div class="l">粗利益（売上−手数料）</div><div class="v">${yen(totals.profit)}</div></div>
-         <div class="card"><div class="l">件数</div><div class="v">${totals.count}件</div></div>
-       </div>`
-    : `<div class="subhead">${esc(meta.title)}　／　${esc(meta.facilityName)}　／　${esc(meta.rangeLabel)}</div>`
-
-  const body = pageRows.length > 0
-    ? pageRows.map(rowHtml).join('')
-    : '<tr><td colspan="8" style="text-align:center;color:#9ca3af;padding:24px;">該当する予約がありません</td></tr>'
-
-  const tfoot = isLast
-    ? `<tfoot><tr>
-         <td colspan="5">合計（${totals.count}件）</td>
-         <td class="r">${yen(totals.sales)}</td><td class="r">−${yen(totals.fee)}</td><td class="r">${yen(totals.profit)}</td>
-       </tr></tfoot>`
-    : ''
-
-  return `<!doctype html><html lang="ja"><head><meta charset="utf-8">
-<title>${esc(meta.fileName)}</title><style>${STYLES}</style></head><body>
-  ${header}
-  <table>${THEAD}<tbody>${body}</tbody>${tfoot}</table>
-  ${isLast ? NOTE : ''}
-  ${pageCount > 1 ? `<div class="pager">${pageIndex + 1} / ${pageCount}</div>` : ''}
-</body></html>`
-}
-
-/**
- * 非表示のiframeを1つ用意して、HTMLの描画・高さ測定・画像化に使い回す。
- * アプリ側のCSSの影響を受けないよう、専用のドキュメントに隔離している。
- */
-function createStage() {
-  const iframe = document.createElement('iframe')
-  iframe.setAttribute('aria-hidden', 'true')
-  iframe.style.cssText = `position:fixed;left:-10000px;top:0;border:0;width:${PAGE_W}px;height:${PAGE_H}px;`
-  document.body.appendChild(iframe)
-
-  const write = async (html: string): Promise<Document> => {
-    const doc = iframe.contentDocument
-    if (!doc) throw new Error('PDFの描画領域を作成できませんでした')
-    doc.open()
-    doc.write(html)
-    doc.close()
-    // フォント読み込み待ち（未対応ブラウザでは待たずに進む）
-    await doc.fonts?.ready?.catch(() => {})
-    return doc
+// 日付を「2026年8月24日 〜 2026年8月26日」から桁数の少ない形へ（列幅に収めるため）
+function compactStay(stay: string): string {
+  const ds = stay.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/g)
+  if (!ds || ds.length < 2) return stay
+  const parse = (s: string) => {
+    const m = s.match(/(\d{4})年(\d{1,2})月(\d{1,2})日/)!
+    return { y: m[1], m: m[2].padStart(2, '0'), d: m[3].padStart(2, '0') }
   }
+  const a = parse(ds[0]), b = parse(ds[1])
+  const tail = a.y === b.y ? `${b.m}/${b.d}` : `${b.y}/${b.m}/${b.d}`
+  return `${a.y}/${a.m}/${a.d} 〜 ${tail}`
+}
 
-  return {
-    /** 描画した中身の高さ（ページに収まるかの判定に使う） */
-    measure: async (html: string) => {
-      const doc = await write(html)
-      return Math.max(doc.body.scrollHeight, doc.documentElement.scrollHeight)
-    },
-    capture: async (html: string, html2canvas: typeof import('html2canvas').default) => {
-      const doc = await write(html)
-      return html2canvas(doc.body, {
-        scale: 2,
-        backgroundColor: '#ffffff',
-        width: PAGE_W,
-        height: PAGE_H,
-        windowWidth: PAGE_W,
-        windowHeight: PAGE_H,
-        logging: false,
+// フォントは一度読み込んだら使い回す
+let fontBytesPromise: Promise<ArrayBuffer> | null = null
+function loadFontBytes(): Promise<ArrayBuffer> {
+  if (!fontBytesPromise) {
+    fontBytesPromise = fetch(FONT_URL)
+      .then(res => {
+        if (!res.ok) throw new Error(`日本語フォントを読み込めませんでした（${res.status}）`)
+        return res.arrayBuffer()
       })
-    },
-    dispose: () => iframe.remove(),
+      .catch(err => {
+        fontBytesPromise = null   // 次回やり直せるようにする
+        throw err
+      })
   }
+  return fontBytesPromise
 }
 
-/**
- * 実際の描画高さを見ながらページを区切る。
- * 最終ページは合計行と注記が加わるので、その状態で測って収まる分だけ載せる。
- */
-async function paginate(
-  rows: ReportRow[],
-  meta: ReportMeta,
-  totals: { sales: number; fee: number; profit: number; count: number },
-  stage: ReturnType<typeof createStage>
-): Promise<ReportRow[][]> {
-  if (rows.length === 0) return [[]]
-
-  const pages: ReportRow[][] = []
-  let rest = rows
-
-  while (rest.length > 0) {
-    const isFirst = pages.length === 0
-    let take = Math.min(rest.length, isFirst ? ROWS_FIRST_PAGE : ROWS_OTHER_PAGE)
-
-    // 収まらなければ、はみ出した高さの分だけ行を減らして測り直す
-    for (let guard = 0; guard < 10 && take > 1; guard++) {
-      const html = pageHtml(rest.slice(0, take), meta, totals, pages.length, take === rest.length ? pages.length + 1 : pages.length + 2)
-      const height = await stage.measure(html)
-      if (height <= PAGE_H) break
-      take = Math.max(1, take - Math.max(1, Math.ceil((height - PAGE_H) / APPROX_ROW_H)))
-    }
-
-    pages.push(rest.slice(0, take))
-    rest = rest.slice(take)
-  }
-
-  return pages
-}
-
-/** レポートをPDFとしてその場でダウンロードする */
 export async function downloadReportPdf(rows: ReportRow[], meta: ReportMeta): Promise<void> {
+  // 出力時にだけ読み込む（通常の画面表示を重くしないため）
+  const [{ PDFDocument, rgb }, fontkitMod, fontBytes] = await Promise.all([
+    import('pdf-lib'),
+    import('@pdf-lib/fontkit'),
+    loadFontBytes(),
+  ])
+
+  const doc = await PDFDocument.create()
+  doc.registerFontkit(fontkitMod.default ?? fontkitMod)
+  // subset:true は使わない（上のコメント参照）
+  const font = await doc.embedFont(fontBytes, { subset: false })
+
+  const ink = rgb(0.12, 0.16, 0.23)      // #1e293b
+  const body = rgb(0.12, 0.13, 0.15)
+  const muted = rgb(0.42, 0.45, 0.5)     // #6b7280
+  const line = rgb(0.9, 0.91, 0.92)      // #e5e7eb
+  const headLine = rgb(0.8, 0.84, 0.88)  // #cbd5e1
+  const brand = rgb(0.39, 0.4, 0.95)     // #6366f1
+  const amber = rgb(0.71, 0.33, 0.04)    // #b45309
+  const indigo = rgb(0.26, 0.22, 0.79)   // #4338ca
+  const zebra = rgb(0.97, 0.98, 0.99)    // #f8fafc
+  const softIndigo = rgb(0.93, 0.95, 1)  // #eef2ff
+  const faint = rgb(0.61, 0.64, 0.69)    // #9ca3af
+
   const totals = {
     sales: rows.reduce((s, r) => s + r.sales, 0),
     fee: rows.reduce((s, r) => s + r.fee, 0),
@@ -226,25 +120,197 @@ export async function downloadReportPdf(rows: ReportRow[], meta: ReportMeta): Pr
     count: rows.length,
   }
 
-  // 出力時にだけ読み込む（通常の画面表示を重くしないため）
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import('html2canvas'),
-    import('jspdf'),
-  ])
+  const width = (t: string, size: number) => font.widthOfTextAtSize(t, size)
 
-  const stage = createStage()
-  try {
-    const pages = await paginate(rows, meta, totals, stage)
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' })
+  /** 幅に収まらない文字列は末尾を「…」で詰める */
+  const fit = (text: string, maxW: number, size: number): string => {
+    if (width(text, size) <= maxW) return text
+    let s = text
+    while (s.length > 1 && width(s + '…', size) > maxW) s = s.slice(0, -1)
+    return s + '…'
+  }
 
-    for (let i = 0; i < pages.length; i++) {
-      const canvas = await stage.capture(pageHtml(pages[i], meta, totals, i, pages.length), html2canvas)
-      if (i > 0) pdf.addPage()
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 210, 297)
+  type TextOpts = { size?: number; color?: RGB; align?: 'left' | 'center' | 'right'; bold?: boolean; maxW?: number }
+  const draw = (page: PDFPage, text: string, x: number, y: number, opts: TextOpts = {}) => {
+    const size = opts.size ?? FS_ROW
+    const t = opts.maxW ? fit(text, opts.maxW, size) : text
+    const w = width(t, size)
+    const px = opts.align === 'right' ? x - w : opts.align === 'center' ? x - w / 2 : x
+    const common = { x: px, y, size, font, color: opts.color ?? body }
+    page.drawText(t, common)
+    // 太字用のフェイスは持たないため、わずかにずらして二度描き太らせる
+    if (opts.bold) page.drawText(t, { ...common, x: px + 0.25 })
+    return w
+  }
+
+  const pages: PDFPage[] = []
+  const newPage = () => {
+    const p = doc.addPage([PAGE_W, PAGE_H])
+    pages.push(p)
+    return p
+  }
+
+  /** ページ見出しを描き、明細テーブルの開始Y座標を返す */
+  const drawPageHeader = (page: PDFPage, isFirst: boolean): number => {
+    if (!isFirst) {
+      const y = PAGE_H - MARGIN - 8
+      draw(page, `${meta.title}　／　${meta.facilityName}　／　${meta.rangeLabel}`, MARGIN, y, { size: 7.5, color: muted })
+      page.drawLine({
+        start: { x: MARGIN, y: y - 6 }, end: { x: PAGE_W - MARGIN, y: y - 6 },
+        thickness: 0.8, color: headLine,
+      })
+      return y - 20
     }
 
-    pdf.save(`${meta.fileName}.pdf`)
-  } finally {
-    stage.dispose()
+    const top = PAGE_H - MARGIN
+    draw(page, 'GuestFollow', MARGIN, top - 9, { size: 8.5, color: brand, bold: true })
+    draw(page, meta.title, MARGIN, top - 27, { size: 15, color: ink, bold: true })
+
+    const right = PAGE_W - MARGIN
+    const today = new Date().toLocaleDateString('ja-JP')
+    draw(page, `出力日：${today}`, right, top - 8, { size: 7.5, color: muted, align: 'right' })
+    draw(page, `施設：${meta.facilityName}／ステータス：${meta.statusLabel}`, right, top - 19, { size: 7.5, color: muted, align: 'right' })
+    draw(page, `期間：${meta.rangeLabel}`, right, top - 30, { size: 7.5, color: muted, align: 'right' })
+
+    page.drawLine({
+      start: { x: MARGIN, y: top - 38 }, end: { x: right, y: top - 38 },
+      thickness: 1.5, color: ink,
+    })
+
+    // 集計カード
+    const cardY = top - 38 - 12 - 46
+    const gap = 9
+    const cardW = (CONTENT_W - gap * 3) / 4
+    const cards: { label: string; value: string; valueColor: RGB; fill?: RGB; border?: RGB }[] = [
+      { label: '売上（総額）', value: yen(totals.sales), valueColor: ink },
+      { label: 'OTA手数料', value: `−${yen(totals.fee)}`, valueColor: amber },
+      { label: '粗利益（売上−手数料）', value: yen(totals.profit), valueColor: indigo, fill: softIndigo, border: rgb(0.78, 0.82, 0.98) },
+      { label: '件数', value: `${totals.count}件`, valueColor: ink },
+    ]
+    cards.forEach((c, i) => {
+      const x = MARGIN + (cardW + gap) * i
+      page.drawRectangle({
+        x, y: cardY, width: cardW, height: 46,
+        color: c.fill, borderColor: c.border ?? line, borderWidth: 0.8,
+      })
+      draw(page, c.label, x + 8, cardY + 30, { size: 6.5, color: muted, maxW: cardW - 16 })
+      draw(page, c.value, x + 8, cardY + 12, { size: 12, color: c.valueColor, bold: true, maxW: cardW - 16 })
+    })
+
+    return cardY - 18
   }
+
+  /** テーブルの見出し行 */
+  const drawTableHead = (page: PDFPage, y: number): number => {
+    page.drawRectangle({ x: MARGIN, y: y - HEAD_H + 5, width: CONTENT_W, height: HEAD_H, color: zebra })
+    let x = MARGIN
+    for (const col of COLS) {
+      const tx = col.align === 'right' ? x + col.w - 5 : col.align === 'center' ? x + col.w / 2 : x + 5
+      draw(page, col.label, tx, y, { size: FS_HEAD, color: rgb(0.28, 0.33, 0.41), align: col.align, maxW: col.w - 8 })
+      x += col.w
+    }
+    page.drawLine({
+      start: { x: MARGIN, y: y - HEAD_H + 5 }, end: { x: PAGE_W - MARGIN, y: y - HEAD_H + 5 },
+      thickness: 1.2, color: headLine,
+    })
+    return y - HEAD_H - 4
+  }
+
+  /** 明細1行 */
+  const drawRow = (page: PDFPage, r: ReportRow, y: number) => {
+    const cells: string[] = [
+      r.facility, r.ota, compactStay(r.stay), r.guest, String(r.guests),
+      yen(r.sales), r.fee ? `−${yen(r.fee)}` : '—', yen(r.profit),
+    ]
+    const colorFor = (i: number): RGB => {
+      if (r.cancelled) return faint
+      if (i === 1) return muted
+      if (i === 6) return amber
+      if (i === 7) return indigo
+      return body
+    }
+
+    let x = MARGIN
+    COLS.forEach((col, i) => {
+      const tx = col.align === 'right' ? x + col.w - 5 : col.align === 'center' ? x + col.w / 2 : x + 5
+      const w = draw(page, cells[i], tx, y, {
+        size: FS_ROW, color: colorFor(i), align: col.align,
+        maxW: col.w - 8, bold: i === 7 && !r.cancelled,
+      })
+      // キャンセルは取り消し線を引く
+      if (r.cancelled && cells[i] !== '—') {
+        const sx = col.align === 'right' ? tx - w : col.align === 'center' ? tx - w / 2 : tx
+        page.drawLine({
+          start: { x: sx, y: y + 2.6 }, end: { x: sx + w, y: y + 2.6 },
+          thickness: 0.5, color: faint,
+        })
+      }
+      x += col.w
+    })
+
+    page.drawLine({
+      start: { x: MARGIN, y: y - 4.5 }, end: { x: PAGE_W - MARGIN, y: y - 4.5 },
+      thickness: 0.5, color: line,
+    })
+  }
+
+  // ── 本文の描画（下端に達したら改ページ） ──
+  const FOOTER_RESERVE = 58   // 合計行＋注記のぶん
+  const BOTTOM = MARGIN + 14
+
+  let page = newPage()
+  let y = drawTableHead(page, drawPageHeader(page, true))
+
+  if (rows.length === 0) {
+    draw(page, '該当する予約がありません', PAGE_W / 2, y - 12, { size: 8, color: faint, align: 'center' })
+    y -= 30
+  }
+
+  rows.forEach((r, i) => {
+    const isLastRow = i === rows.length - 1
+    const needed = ROW_H + (isLastRow ? FOOTER_RESERVE : 0)
+    if (y - needed < BOTTOM) {
+      page = newPage()
+      y = drawTableHead(page, drawPageHeader(page, false))
+    }
+    drawRow(page, r, y)
+    y -= ROW_H
+  })
+
+  // 合計行
+  if (y - FOOTER_RESERVE < BOTTOM) {
+    page = newPage()
+    y = drawTableHead(page, drawPageHeader(page, false))
+  }
+  page.drawRectangle({ x: MARGIN, y: y - 7, width: CONTENT_W, height: 18, color: zebra })
+  page.drawLine({ start: { x: MARGIN, y: y + 11 }, end: { x: PAGE_W - MARGIN, y: y + 11 }, thickness: 1.5, color: ink })
+  draw(page, `合計（${totals.count}件）`, MARGIN + 5, y, { size: FS_ROW, color: ink, bold: true })
+  const rightEdges = COLS.reduce<number[]>((acc, c) => [...acc, (acc[acc.length - 1] ?? MARGIN) + c.w], [])
+  draw(page, yen(totals.sales), rightEdges[4] - 5, y, { size: FS_ROW, color: ink, bold: true, align: 'right' })
+  draw(page, `−${yen(totals.fee)}`, rightEdges[5] - 5, y, { size: FS_ROW, color: amber, bold: true, align: 'right' })
+  draw(page, yen(totals.profit), rightEdges[6] - 5, y, { size: FS_ROW, color: indigo, bold: true, align: 'right' })
+  y -= 24
+
+  // 注記
+  draw(page, '※ 売上＝OTA予約の総額。OTA手数料＝サイトコントローラー（Beds24）から取得した手数料の実額。粗利益＝売上−OTA手数料。', MARGIN, y, { size: 6.5, color: muted })
+  draw(page, '※ 実際の入金額・振込タイミングはOTAにより異なります（Airbnbは粗利益が入金、Booking.comは売上が入金され後日手数料を支払い）。', MARGIN, y - 10, { size: 6.5, color: muted })
+
+  // ページ番号
+  if (pages.length > 1) {
+    pages.forEach((p, i) => {
+      draw(p, `${i + 1} / ${pages.length}`, PAGE_W - MARGIN, MARGIN - 6, { size: 6.5, color: faint, align: 'right' })
+    })
+  }
+
+  doc.setTitle(meta.fileName)
+  doc.setCreator('GuestFollow')
+
+  const bytes = await doc.save()
+  const blob = new Blob([bytes as BlobPart], { type: 'application/pdf' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `${meta.fileName}.pdf`
+  a.click()
+  URL.revokeObjectURL(url)
 }
