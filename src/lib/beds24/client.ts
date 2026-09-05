@@ -259,16 +259,24 @@ export async function getBookings(
   dateTo: string,
   apiKey: string
 ): Promise<Beds24Booking[]> {
-  const params = new URLSearchParams({
+  const base = {
     propertyId: propertyId,
     arrivalFrom: dateFrom,
     arrivalTo: dateTo,
     includeInvoiceItems: 'true', // 宿泊料（課税標準）算出のため内訳を取得
-  })
-  const raw = await beds24Fetch(`/bookings?${params}`, apiKey)
-  const list = unwrapData(raw)
+  }
+
+  // Beds24 v2 の /bookings は status を指定しないとキャンセル済みを返さない。
+  // 取り込んだ後にキャンセルされた予約が二度と取得できず、売上に残り続けてしまうため、
+  // 通常分とキャンセル分を別々に取得して結合する。
+  const [normalRaw, cancelledRaw] = await Promise.all([
+    beds24Fetch(`/bookings?${new URLSearchParams(base)}`, apiKey),
+    beds24Fetch(`/bookings?${new URLSearchParams({ ...base, status: 'cancelled' })}`, apiKey),
+  ])
+
+  const list = [...unwrapData(normalRaw), ...unwrapData(cancelledRaw)]
   return list
-    // 'black'（ブロック＝実予約ではない）のみ除外。cancelled は売上レポート用に同期する
+    // 'black'（ブロック＝実予約ではない）のみ除外
     .filter(b => String(b.status ?? '').toLowerCase() !== 'black')
     .map(b => {
       const status = String(b.status ?? '').toLowerCase()
