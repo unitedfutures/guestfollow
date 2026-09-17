@@ -10,7 +10,6 @@ type Rules = {
   weekday: number
   saturday: number
   preHoliday: number
-  floor: number
   minStayDefault: number
   minStayByDow: Record<string, number>
 }
@@ -20,7 +19,7 @@ type DayVal = { price: number | null; minStay: number | null }
 type Month = { y: number; m: number }
 
 const DEFAULT_RULES: Rules = {
-  weekday: 12000, saturday: 15000, preHoliday: 15000, floor: 10000,
+  weekday: 12000, saturday: 15000, preHoliday: 15000,
   minStayDefault: 1, minStayByDow: { '0': 1, '1': 1, '2': 1, '3': 1, '4': 1, '5': 1, '6': 1 },
 }
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
@@ -153,7 +152,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
 
   const autoPriceFor = (date: string, dow: number) => {
     const cat = isPreHoliday(date) ? rules.preHoliday : (dow === 6 ? rules.saturday : rules.weekday)
-    return Math.max(Math.round(cat) || 0, Math.round(rules.floor) || 0)
+    return Math.round(cat) || 0
   }
   const autoMinStayFor = (dow: number) => rules.minStayByDow?.[String(dow)] ?? rules.minStayDefault ?? 1
 
@@ -312,9 +311,9 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
           <p className="text-sm font-semibold text-gray-700 flex items-center gap-1.5"><Wand2 size={15} className="text-navy-600" /> 料金一括設定のルール</p>
           <Button onClick={saveRules} loading={savingRules} variant="outline" className="!py-1.5 text-xs"><Save size={13} /> ルールを保存</Button>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {([
-            ['平日価格', 'weekday'], ['土曜価格', 'saturday'], ['祝前日価格', 'preHoliday'], ['最低価格（下限）', 'floor'],
+            ['平日価格', 'weekday'], ['土曜価格', 'saturday'], ['祝前日価格', 'preHoliday'],
           ] as [string, keyof Rules][]).map(([label, key]) => (
             <label key={key} className="block">
               <span className="text-xs text-gray-500">{label}</span>
