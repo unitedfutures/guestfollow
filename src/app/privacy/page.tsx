@@ -8,7 +8,7 @@ export default function PrivacyPage() {
   return (
     <LegalLayout>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">プライバシーポリシー</h1>
-        <p className="text-sm text-gray-400 mb-10">最終更新日：2026年5月20日　施行日：2026年5月20日</p>
+        <p className="text-sm text-gray-400 mb-10">最終更新日：2026年9月17日　施行日：2026年5月20日</p>
 
         <div className="prose prose-sm max-w-none text-gray-700 space-y-10">
 
@@ -83,7 +83,8 @@ export default function PrivacyPage() {
               保存期間経過後は速やかに削除します。
             </p>
             <p>
-              事業者のアカウント情報は、アカウントの解約・削除から90日後に削除します。
+              事業者が退会した場合、事業者のアカウント情報、および当該事業者がオーナーである施設の宿泊者情報（顔写真・旅券画像を含みます）は、退会手続きの完了時に直ちに削除します。
+              宿泊者名簿の法令上の保存義務は事業者にあるため、事業者は退会前に必要な情報を出力・保存してください。
             </p>
           </Section>
 

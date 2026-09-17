@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import { SettingsForm } from './settings-form'
 import { OtaAccountsManager } from './ota-accounts-manager'
 import { CleaningStaffManager } from './cleaning-staff-manager'
+import { WithdrawSection } from './withdraw-section'
 import { getAccountAccess } from '@/lib/auth/roles'
 import { CLEANING_STAFF_SELECT, withAccountStatus, type CleaningStaffRow } from '@/lib/cleaning/staff'
 
@@ -112,6 +113,8 @@ export default async function SettingsPage() {
             </ul>
           </CardContent>
         </Card>
+
+        <WithdrawSection ownFacilityCount={facilities?.length ?? 0} email={user.email ?? ''} />
       </div>
     </div>
   )
