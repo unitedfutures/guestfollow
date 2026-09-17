@@ -299,6 +299,10 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
             <span className="text-[11px] text-gray-400 self-end pb-1">泊〜</span>
           </div>
         </div>
+
+        <div className="mt-4 flex justify-end">
+          <Button onClick={applyAuto} variant="outline" className="!py-2 text-sm"><Wand2 size={14} /> 自動プライシングを適用</Button>
+        </div>
       </div>
 
       {/* 月ナビ + アクション */}
@@ -310,7 +314,6 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
           {loadingCal && <RefreshCw size={14} className="text-gray-400 animate-spin" />}
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={applyAuto} variant="outline" className="!py-2 text-sm"><Wand2 size={14} /> 自動プライシングを適用</Button>
           <Button onClick={applyToBeds24} loading={applying} disabled={!facility?.has_refresh}
             title={facility?.has_refresh ? '' : 'Refresh Tokenの設定が必要です'} className="!py-2 text-sm">
             <UploadCloud size={14} /> Beds24へ反映
