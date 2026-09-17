@@ -576,6 +576,7 @@ export default async function LandingPage() {
             <div>
               <p className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-3">規約・ポリシー</p>
               <ul className="space-y-2 text-xs text-gray-500">
+                <li><Link href="/terms" className="hover:text-gray-300 transition-colors">利用規約</Link></li>
                 <li><Link href="/tokusho" className="hover:text-gray-300 transition-colors">特定商取引法に基づく表記</Link></li>
                 <li><Link href="/privacy" className="hover:text-gray-300 transition-colors">プライバシーポリシー</Link></li>
               </ul>

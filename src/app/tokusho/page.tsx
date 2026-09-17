@@ -1,5 +1,4 @@
-import Link from 'next/link'
-import { Logo } from '@/components/logo'
+import { LegalLayout } from '@/components/legal-page'
 
 export const metadata = {
   title: '特定商取引法に基づく表記 | GuestFollow',
@@ -58,20 +57,7 @@ const rows = [
 
 export default function TokushoPage() {
   return (
-    <div className="min-h-screen bg-white">
-      {/* ヘッダー */}
-      <header className="bg-navy-700 py-4 px-6">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
-          <Link href="/">
-            <Logo variant="default" size="sm" />
-          </Link>
-          <Link href="/" className="text-navy-200 hover:text-white text-sm transition-colors">
-            ← トップへ戻る
-          </Link>
-        </div>
-      </header>
-
-      <main className="max-w-4xl mx-auto px-6 py-16">
+    <LegalLayout>
         <h1 className="text-2xl font-bold text-gray-900 mb-2">特定商取引法に基づく表記</h1>
         <p className="text-sm text-gray-400 mb-10">最終更新日：2026年5月20日</p>
 
@@ -95,17 +81,6 @@ export default function TokushoPage() {
           本表記は特定商取引に関する法律第11条の規定に基づき表示しています。内容は予告なく変更される場合があります。
           変更後は本ページに掲載した時点で効力を生じるものとします。
         </p>
-      </main>
-
-      <footer className="border-t border-gray-100 py-8 px-6 text-center">
-        <p className="text-xs text-gray-400">
-          <a href="https://united-futures.com/" target="_blank" rel="noopener noreferrer" className="hover:text-gray-600 transition-colors">© 2026 UNITED FUTURES, INC.</a>
-        </p>
-        <div className="flex justify-center gap-6 mt-3 text-xs text-gray-400">
-          <Link href="/tokusho" className="hover:text-navy-500 transition-colors">特定商取引法に基づく表記</Link>
-          <Link href="/privacy" className="hover:text-navy-500 transition-colors">プライバシーポリシー</Link>
-        </div>
-      </footer>
-    </div>
+    </LegalLayout>
   )
 }

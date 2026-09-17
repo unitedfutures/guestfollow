@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { TERMS_VERSION } from '@/lib/terms'
 
 // 外部サイトへ飛ばされないよう、自サイト内の絶対パスだけを遷移先として許可する
 function safeRedirect(value: string | null): string {
@@ -55,7 +56,8 @@ function SignupForm() {
       email,
       password,
       options: {
-        data: { company_name: companyName },
+        // 同意した利用規約の版と日時を記録する
+        data: { company_name: companyName, terms_version: TERMS_VERSION, terms_agreed_at: new Date().toISOString() },
         emailRedirectTo: `${window.location.origin}/api/auth/callback?redirect=${encodeURIComponent(redirect)}`,
       },
     })
@@ -138,10 +140,12 @@ function SignupForm() {
                 onChange={(e) => setAgreed(e.target.checked)}
               />
               <span className="text-xs text-gray-600 leading-relaxed">
+                <Link href="/terms" target="_blank" className="text-navy-500 hover:underline">利用規約</Link>
+                {'、'}
                 <Link href="/privacy" target="_blank" className="text-navy-500 hover:underline">プライバシーポリシー</Link>
                 {' '}および{' '}
                 <Link href="/tokusho" target="_blank" className="text-navy-500 hover:underline">特定商取引法に基づく表記</Link>
-                {' '}に同意します
+                {' '}に同意します（本サービスは現在β版です）
               </span>
             </label>
 
