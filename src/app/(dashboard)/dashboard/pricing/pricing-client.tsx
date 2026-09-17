@@ -418,6 +418,10 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
             {days.map(({ date, d, dow, holiday, pre }) => {
               const v = drafts[date] ?? cal[date] ?? { price: null, minStay: null }
               const isDraft = date in drafts
+              // Beds24に登録されている現在の値（入力欄とは別に表示）
+              const cur = cal[date]
+              const curPrice = cur?.price != null ? `¥${cur.price.toLocaleString()}` : '—'
+              const curMinStay = cur?.minStay != null ? `${cur.minStay}泊` : '—'
               const isSat = dow === 6
               const isSun = dow === 0
               return (
@@ -441,6 +445,10 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
                       className="w-full text-[11px] text-center rounded border border-gray-200 px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-navy-300" />
                     <span className="text-[9px] text-gray-400 shrink-0">泊</span>
                   </div>
+                  <div className="mt-1 pt-1 border-t border-dashed border-gray-200 text-[9px] leading-tight text-gray-500"
+                    title="Beds24に登録されている現在の価格・最低宿泊日数">
+                    <span className="text-gray-400">現在 </span>{curPrice}<span className="text-gray-400"> / </span>{curMinStay}
+                  </div>
                 </div>
               )
             })}
@@ -449,7 +457,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        ※ 「料金一括設定」や手入力で変更した日（黄色の枠）は、「Beds24へ反映」を押すまでBeds24には送られません。反映すると、月をまたいだ期間でも未反映の日がまとめてBeds24（部屋単位）に書き込まれ、連携中のOTA（Airbnb・Booking.com等）に反映されます。空欄（—）の日は反映されません。
+        ※ 各日の下段「現在」は、Beds24に登録されている現在の価格・最低宿泊日数です。「料金一括設定」や手入力で変更した日（黄色の枠）は、「Beds24へ反映」を押すまでBeds24には送られません。反映すると、月をまたいだ期間でも未反映の日がまとめてBeds24（部屋単位）に書き込まれ、連携中のOTA（Airbnb・Booking.com等）に反映されます。空欄（—）の日は反映されません。
         反映には <span className="font-medium">write:inventory</span> スコープを含むRefresh Tokenの設定が必要です（設定 → サイトコントローラー連携）。
         価格は「¥」の数値、税・サービス料の扱いはBeds24側の設定に従います。
       </p>
