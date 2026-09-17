@@ -26,6 +26,21 @@ const DEFAULT_RULES: Rules = {
 const DOW_LABELS = ['日', '月', '火', '水', '木', '金', '土']
 const pad = (n: number) => String(n).padStart(2, '0')
 const ymd = (y: number, m: number, d: number) => `${y}-${pad(m)}-${pad(d)}`
+const todayStr = () => { const t = new Date(); return ymd(t.getFullYear(), t.getMonth() + 1, t.getDate()) }
+const MAX_RANGE_DAYS = 366
+// 開始日〜終了日（YYYY-MM-DD）の日付と曜日を列挙
+const eachDate = (start: string, end: string) => {
+  const list: { date: string; dow: number }[] = []
+  const [y, m, d] = start.split('-').map(Number)
+  const cur = new Date(Date.UTC(y, m - 1, d))
+  const last = Date.parse(`${end}T00:00:00Z`)
+  while (cur.getTime() <= last && list.length <= MAX_RANGE_DAYS) {
+    list.push({ date: cur.toISOString().slice(0, 10), dow: cur.getUTCDay() })
+    cur.setUTCDate(cur.getUTCDate() + 1)
+  }
+  return list
+}
+const fmtDate = (s: string) => s.replace(/-/g, '/')
 
 export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const [facilityId, setFacilityId] = useState(facilities[0]?.id ?? '')
@@ -33,7 +48,9 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const [rooms, setRooms] = useState<Room[]>([])
   const [roomId, setRoomId] = useState('')
   const [rules, setRules] = useState<Rules>(facility?.pricing_rules ?? DEFAULT_RULES)
+  // cal: 表示中の月のBeds24の現在値 / drafts: まだBeds24へ反映していない変更（月をまたいで保持）
   const [cal, setCal] = useState<Record<string, DayVal>>({})
+  const [drafts, setDrafts] = useState<Record<string, DayVal>>({})
   // 初期表示：月末付近（残り7日以内）は当月がほぼ過去日で空になるため翌月から表示
   const [month, setMonth] = useState(() => {
     const d = new Date()
@@ -41,6 +58,12 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
     const base = d.getDate() > daysInMonth - 7 ? new Date(d.getFullYear(), d.getMonth() + 1, 1) : d
     return { y: base.getFullYear(), m: base.getMonth() + 1 }
   })
+  // 料金一括設定の期間（初期値：今日〜表示月の月末）
+  const [rangeStart, setRangeStart] = useState(() => {
+    const first = ymd(month.y, month.m, 1)
+    return first > todayStr() ? first : todayStr()
+  })
+  const [rangeEnd, setRangeEnd] = useState(() => ymd(month.y, month.m, new Date(month.y, month.m, 0).getDate()))
 
   const [loadingRooms, setLoadingRooms] = useState(false)
   const [loadingCal, setLoadingCal] = useState(false)
@@ -93,8 +116,15 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { loadRooms(facilityId, month) }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 未反映の変更がある状態で施設・部屋を切り替えるときは確認する
+  const draftCount = Object.keys(drafts).length
+  const confirmDiscard = () =>
+    draftCount === 0 || confirm(`Beds24へ未反映の変更が ${draftCount}日分あります。破棄して切り替えますか？`)
+
   // 施設を切り替える：ルールを読み直し、部屋とカレンダーを取り直す
   const selectFacility = (id: string) => {
+    if (!confirmDiscard()) return
+    setDrafts({})
     setFacilityId(id)
     const f = facilities.find(x => x.id === id)
     setRules(f?.pricing_rules ?? DEFAULT_RULES)
@@ -103,6 +133,8 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   }
 
   const selectRoom = (id: string) => {
+    if (!confirmDiscard()) return
+    setDrafts({})
     setRoomId(id)
     loadCalendar(facilityId, id, month)
   }
@@ -125,22 +157,36 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   }
   const autoMinStayFor = (dow: number) => rules.minStayByDow?.[String(dow)] ?? rules.minStayDefault ?? 1
 
-  // 自動プライシングを当月に適用
-  const applyAuto = () => {
-    const next = { ...cal }
-    for (const { date, dow } of days) {
-      next[date] = { price: autoPriceFor(date, dow), minStay: autoMinStayFor(dow) }
+  // 料金一括設定：指定期間の価格・最低宿泊日数をルールから作成する（反映は別操作）
+  const applyBulk = () => {
+    if (!rangeStart || !rangeEnd) { setMsg({ type: 'err', text: '開始日と終了日を選択してください。' }); return }
+    if (rangeStart > rangeEnd) { setMsg({ type: 'err', text: '終了日は開始日以降の日付を選択してください。' }); return }
+    if (rangeStart < todayStr()) { setMsg({ type: 'err', text: '過去の日付は設定できません。開始日は今日以降を選択してください。' }); return }
+    const dates = eachDate(rangeStart, rangeEnd)
+    if (dates.length > MAX_RANGE_DAYS) { setMsg({ type: 'err', text: `一度に設定できるのは${MAX_RANGE_DAYS}日分までです。期間を短くしてください。` }); return }
+
+    setDrafts(prev => {
+      const next = { ...prev }
+      for (const { date, dow } of dates) next[date] = { price: autoPriceFor(date, dow), minStay: autoMinStayFor(dow) }
+      return next
+    })
+    // 表示中の月が期間に含まれなければ、開始日の月へ移動する
+    const monthStart = ymd(month.y, month.m, 1)
+    const monthEnd = ymd(month.y, month.m, new Date(month.y, month.m, 0).getDate())
+    if (rangeEnd < monthStart || rangeStart > monthEnd) {
+      const [y, m] = rangeStart.split('-').map(Number)
+      setMonth({ y, m })
+      loadCalendar(facilityId, roomId, { y, m })
     }
-    setCal(next)
-    setMsg({ type: 'ok', text: 'ルールから当月の価格・最低宿泊日数を作成しました。内容を確認して「Beds24へ反映」してください。' })
+    setMsg({ type: 'ok', text: `${fmtDate(rangeStart)} 〜 ${fmtDate(rangeEnd)} の ${dates.length}日分の価格・最低宿泊日数を作成しました。内容を確認して「Beds24へ反映」してください。` })
   }
 
   const setDay = (date: string, field: keyof DayVal, value: string) => {
     if (value !== '' && !Number.isFinite(Number(value))) return
-    setCal(prev => ({
-      ...prev,
-      [date]: { ...prev[date], [field]: value === '' ? null : Number(value) },
-    }))
+    setDrafts(prev => {
+      const base = prev[date] ?? cal[date] ?? { price: null, minStay: null }
+      return { ...prev, [date]: { ...base, [field]: value === '' ? null : Number(value) } }
+    })
   }
 
   const saveRules = async () => {
@@ -166,15 +212,20 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
     }
   }
 
-  const filledDays = days.filter(d => cal[d.date] && (cal[d.date].price != null || cal[d.date].minStay != null))
+  // 反映対象：未反映の変更のうち、値が入っている日（日付順）
+  const pendingDays = Object.entries(drafts)
+    .filter(([, v]) => v.price != null || v.minStay != null)
+    .sort(([a], [b]) => a.localeCompare(b))
 
   const applyToBeds24 = async () => {
     if (!facility || !roomId) return
-    if (filledDays.length === 0) { setMsg({ type: 'err', text: '反映する価格がありません。先に自動プライシングを適用するか、価格を入力してください。' }); return }
-    if (!confirm(`${month.y}年${month.m}月の ${filledDays.length}日分の価格・最低宿泊日数をBeds24に反映します。\nこの操作は実際のOTA掲載価格を更新します。よろしいですか？`)) return
+    if (pendingDays.length === 0) { setMsg({ type: 'err', text: '反映する変更がありません。先に料金一括設定を行うか、価格を入力してください。' }); return }
+    const first = pendingDays[0][0]
+    const last = pendingDays[pendingDays.length - 1][0]
+    if (!confirm(`${fmtDate(first)} 〜 ${fmtDate(last)} のうち ${pendingDays.length}日分の価格・最低宿泊日数をBeds24に反映します。\nこの操作は実際のOTA掲載価格を更新します。よろしいですか？`)) return
 
     setApplying(true); setMsg(null)
-    const payload = filledDays.map(d => ({ date: d.date, price: cal[d.date].price, minStay: cal[d.date].minStay }))
+    const payload = pendingDays.map(([date, v]) => ({ date, price: v.price, minStay: v.minStay }))
     try {
       const res = await fetch('/api/pricing/apply', {
         method: 'POST',
@@ -184,6 +235,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setMsg({ type: 'err', text: data.error ?? '反映に失敗しました' }); return }
       setMsg({ type: 'ok', text: `Beds24に ${data.updated} 日分を反映しました。反映がOTAに届くまで数分かかる場合があります。` })
+      setDrafts({})
       loadCalendar(facilityId, roomId, month)
     } catch {
       setMsg({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
@@ -257,7 +309,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       {/* 価格ルール */}
       <div className="bg-white border border-gray-200 rounded-xl p-4">
         <div className="flex items-center justify-between mb-3">
-          <p className="text-sm font-semibold text-gray-700 flex items-center gap-1.5"><Wand2 size={15} className="text-navy-600" /> 自動プライシングのルール</p>
+          <p className="text-sm font-semibold text-gray-700 flex items-center gap-1.5"><Wand2 size={15} className="text-navy-600" /> 料金一括設定のルール</p>
           <Button onClick={saveRules} loading={savingRules} variant="outline" className="!py-1.5 text-xs"><Save size={13} /> ルールを保存</Button>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -300,8 +352,24 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
           </div>
         </div>
 
-        <div className="mt-4 flex justify-end">
-          <Button onClick={applyAuto} variant="outline" className="!py-2 text-sm"><Wand2 size={14} /> 自動プライシングを適用</Button>
+        {/* 料金一括設定：期間を選んでルールから作成 */}
+        <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium text-gray-600 mb-2">設定する期間</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input type="date" value={rangeStart} min={todayStr()} onChange={e => setRangeStart(e.target.value)}
+                aria-label="開始日"
+                className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-300" />
+              <span className="text-sm text-gray-400">〜</span>
+              <input type="date" value={rangeEnd} min={rangeStart || todayStr()} onChange={e => setRangeEnd(e.target.value)}
+                aria-label="終了日"
+                className="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-navy-300" />
+              {rangeStart && rangeEnd && rangeStart <= rangeEnd && (
+                <span className="text-xs text-gray-400">{eachDate(rangeStart, rangeEnd).length}日間</span>
+              )}
+            </div>
+          </div>
+          <Button onClick={applyBulk} variant="outline" className="!py-2 text-sm"><Wand2 size={14} /> 料金一括設定</Button>
         </div>
       </div>
 
@@ -314,6 +382,9 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
           {loadingCal && <RefreshCw size={14} className="text-gray-400 animate-spin" />}
         </div>
         <div className="flex items-center gap-2">
+          {draftCount > 0 && (
+            <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">未反映 {draftCount}日分</span>
+          )}
           <Button onClick={applyToBeds24} loading={applying} disabled={!facility?.has_refresh}
             title={facility?.has_refresh ? '' : 'Refresh Tokenの設定が必要です'} className="!py-2 text-sm">
             <UploadCloud size={14} /> Beds24へ反映
@@ -331,7 +402,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       {/* 価格が空の月の案内 */}
       {!loadingCal && Object.keys(cal).length === 0 && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          この月はBeds24から取得できる価格がありません（過去日を含む月や、価格未設定の場合）。翌月（▶）を確認するか、「自動プライシングを適用」で価格を作成できます。
+          この月はBeds24から取得できる価格がありません（過去日を含む月や、価格未設定の場合）。翌月（▶）を確認するか、「料金一括設定」で価格を作成できます。
         </p>
       )}
 
@@ -346,11 +417,13 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
           <div className="grid grid-cols-7 gap-1.5">
             {Array.from({ length: leadingBlanks }).map((_, i) => <div key={`b${i}`} />)}
             {days.map(({ date, d, dow, holiday, pre }) => {
-              const v = cal[date] ?? { price: null, minStay: null }
+              const v = drafts[date] ?? cal[date] ?? { price: null, minStay: null }
+              const isDraft = date in drafts
               const isSat = dow === 6
               const isSun = dow === 0
               return (
-                <div key={date} className={`rounded-lg border p-1.5 ${holiday || isSun ? 'border-red-100 bg-red-50/40' : isSat ? 'border-blue-100 bg-blue-50/40' : 'border-gray-100 bg-white'}`}>
+                <div key={date} title={isDraft ? 'Beds24へ未反映' : undefined}
+                  className={`rounded-lg border p-1.5 ${isDraft ? 'ring-2 ring-amber-300' : ''} ${holiday || isSun ? 'border-red-100 bg-red-50/40' : isSat ? 'border-blue-100 bg-blue-50/40' : 'border-gray-100 bg-white'}`}>
                   <div className="flex items-center justify-between mb-1">
                     <span className={`text-xs font-bold ${holiday || isSun ? 'text-red-500' : isSat ? 'text-blue-500' : 'text-gray-600'}`}>{d}</span>
                     {pre && <span className="text-[8px] font-bold text-amber-600 bg-amber-50 border border-amber-200 rounded px-0.5">祝前</span>}
@@ -377,7 +450,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       </div>
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        ※ 「Beds24へ反映」で、表示中の月の価格・最低宿泊日数がBeds24（部屋単位）に書き込まれ、連携中のOTA（Airbnb・Booking.com等）に反映されます。空欄（—）の日は反映されません。
+        ※ 「料金一括設定」や手入力で変更した日（黄色の枠）は、「Beds24へ反映」を押すまでBeds24には送られません。反映すると、月をまたいだ期間でも未反映の日がまとめてBeds24（部屋単位）に書き込まれ、連携中のOTA（Airbnb・Booking.com等）に反映されます。空欄（—）の日は反映されません。
         反映には <span className="font-medium">write:inventory</span> スコープを含むRefresh Tokenの設定が必要です（設定 → サイトコントローラー連携）。
         価格は「¥」の数値、税・サービス料の扱いはBeds24側の設定に従います。
       </p>
