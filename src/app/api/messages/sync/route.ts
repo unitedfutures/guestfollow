@@ -34,8 +34,8 @@ export async function POST() {
     const facility = Array.isArray(b.facilities) ? b.facilities[0] : b.facilities
     let apiKey = keyCache.get(b.facility_id)
     if (apiKey === undefined) {
-      // メッセージ読み取りは refresh token（書き込み可）を優先。無ければ Long Life Token。
-      const { token } = await resolveBeds24Token(supabase, user.id, facility ?? {})
+      // メッセージ読み取りは Long Life Token を優先（書き込み専用トークンでは読めないため）
+      const { token } = await resolveBeds24Token(supabase, user.id, facility ?? {}, 'read')
       apiKey = token
       keyCache.set(b.facility_id, apiKey)
     }

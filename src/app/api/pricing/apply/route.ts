@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'この操作を行う権限がありません' }, { status: 403 })
   }
 
-  const { token, source } = await resolveBeds24Token(supabase, user.id, facility)
+  const { token, source } = await resolveBeds24Token(supabase, user.id, facility, 'write')
   if (!token) return NextResponse.json({ error: 'Beds24のトークンが設定されていません' }, { status: 400 })
   if (source !== 'refresh') {
     return NextResponse.json({

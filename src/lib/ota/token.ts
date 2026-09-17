@@ -40,15 +40,18 @@ async function getBeds24AccessTokenFromAccount(
 }
 
 /**
- * Beds24 でメッセージ送受信など「書き込み」に使うトークンを取得する。
- * refresh_token（invite code由来）があればそのアクセストークンを優先。
- * 無ければ api_key（Long Life Token）にフォールバックする。
+ * Beds24 の API 呼び出しに使うトークンを取得する。
+ * - write: refresh_token（invite code由来）のアクセストークンを優先し、無ければ api_key。
+ * - read : api_key（Long Life Token / 読み取りスコープ）を優先し、無ければアクセストークン。
+ *   invite code を書き込みスコープだけで発行すると、そのトークンでは読み取りAPIが
+ *   401「Token not valid」になるため、読み取りには Long Life Token を使う。
  * 戻り値の source で、どちらのトークンかを呼び出し側が判別できる。
  */
 export async function resolveBeds24Token(
   supabase: SupabaseClient,
   userId: string,
-  facility: FacilityLike
+  facility: FacilityLike,
+  purpose: 'read' | 'write'
 ): Promise<{ token: string | null; source: 'refresh' | 'longlife' | null }> {
   if (facility.ota_account_id) {
     const { data: account } = await supabase
@@ -57,6 +60,7 @@ export async function resolveBeds24Token(
       .eq('id', facility.ota_account_id)
       .single()
     if (account) {
+      if (purpose === 'read' && account.api_key) return { token: account.api_key, source: 'longlife' }
       const access = await getBeds24AccessTokenFromAccount(supabase, account as Beds24AccountRow)
       if (access) return { token: access, source: 'refresh' }
       if (account.api_key) return { token: account.api_key, source: 'longlife' }

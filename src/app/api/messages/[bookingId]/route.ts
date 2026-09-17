@@ -63,7 +63,7 @@ export async function POST(
   }
 
   const facility = Array.isArray(booking.facilities) ? booking.facilities[0] : booking.facilities
-  const { token, source } = await resolveBeds24Token(supabase, user.id, facility ?? {})
+  const { token, source } = await resolveBeds24Token(supabase, user.id, facility ?? {}, 'write')
   if (!token) {
     return NextResponse.json({ error: 'Beds24のトークンが設定されていません' }, { status: 400 })
   }
