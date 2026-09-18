@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Coins, ChevronDown, ChevronLeft, ChevronRight, Wand2, UploadCloud, Save, RefreshCw, Check, AlertTriangle, KeyRound } from 'lucide-react'
+import { Coins, ChevronDown, Sliders, ChevronLeft, ChevronRight, Wand2, UploadCloud, Save, RefreshCw, Check, AlertTriangle, KeyRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJpHoliday, isPreHoliday } from '@/lib/jp-holidays'
+import { BaseSettingsPanel } from './base-settings-panel'
 
 type Rules = {
   weekday: number
@@ -69,6 +70,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const [applying, setApplying] = useState(false)
   const [savingRules, setSavingRules] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  const [showBaseSettings, setShowBaseSettings] = useState(false)
 
   // カレンダー読込（Beds24の現在値）
   // 施設・部屋・月を引数で受け取り、操作（施設/部屋の切替・月送り）から直接呼ぶ
@@ -290,7 +292,25 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
         )}
         {rooms.length === 1 && <span className="text-xs text-gray-500">部屋：{rooms[0].name}</span>}
         {loadingRooms && <span className="text-xs text-gray-400 flex items-center gap-1"><RefreshCw size={12} className="animate-spin" /> 読込中</span>}
+        {roomId && (
+          <Button variant="outline" onClick={() => setShowBaseSettings(v => !v)}
+            className="!py-1.5 text-xs ml-auto">
+            <Sliders size={13} /> 基本設定
+          </Button>
+        )}
       </div>
+
+      {/* 基本設定（Beds24の日別料金のルール） */}
+      {showBaseSettings && roomId && facility && (
+        <BaseSettingsPanel
+          key={`${facilityId}:${roomId}`}
+          facilityId={facilityId}
+          roomId={roomId}
+          roomName={rooms.find(r => r.roomId === roomId)?.name ?? ''}
+          canWrite={!!facility.has_refresh}
+          onClose={() => setShowBaseSettings(false)}
+        />
+      )}
 
       {/* Refresh Token 未設定：反映（書き込み）不可の案内 */}
       {facility && !facility.has_refresh && (

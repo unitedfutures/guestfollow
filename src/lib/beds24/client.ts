@@ -370,3 +370,107 @@ export async function beds24RawFetch(path: string, apiKey: string) {
   const text = await res.text()
   return { status: res.status, ok: res.ok, body: text }
 }
+
+// ============================================================
+// 基本設定（Beds24の「日別料金」のルール = fixedPrices）
+//   基本人数・人数追加料金・最低/最大宿泊日数・チェックインまでの日数を扱う。
+//   ※ fixedPrices は作成・変更のみでAPIから削除できない（Beds24の画面で削除する）。
+// ============================================================
+
+export interface Beds24BaseSettings {
+  basePeople: number        // roomPriceGuests（0 = 定員を使う）
+  extraPersonPrice: number  // extraPersonPrice
+  minNights: number         // minNights
+  maxNights: number         // maxNights
+  minAdvance: number        // minAdvance（何日後以降のチェックインを受け付けるか）
+  maxAdvance: number        // maxAdvance（何日先までのチェックインを受け付けるか。0 = 制限なし）
+}
+
+export interface Beds24BaseSettingsState extends Beds24BaseSettings {
+  fixedPriceId: number | null   // 既存ルールのID（null なら未作成）
+  fixedPriceName: string | null
+  roomMaxPeople: number         // 部屋の定員（基本人数の初期値・上限の目安）
+}
+
+/** 部屋の「日別料金」ルールと部屋設定から、基本設定の現在値を読み取る */
+export async function getBaseSettings(
+  token: string, propertyId: string, roomId: string
+): Promise<Beds24BaseSettingsState> {
+  const [propRaw, fixedRaw] = await Promise.all([
+    beds24Fetch(`/properties?id=${encodeURIComponent(propertyId)}&includeAllRooms=true`, token),
+    beds24Fetch(`/inventory/fixedPrices?roomId=${encodeURIComponent(roomId)}`, token),
+  ])
+  const rooms = ((propRaw?.data ?? [])[0]?.roomTypes ?? []) as Record<string, unknown>[]
+  const room = rooms.find(r => String(r.id) === String(roomId)) ?? {}
+
+  // 「日別料金 1」に当たる最も古いルールを基本設定として扱う
+  const rules = ((fixedRaw?.data ?? []) as Record<string, unknown>[])
+    .slice()
+    .sort((a, b) => Number(a.id) - Number(b.id))
+  const rule = rules[0]
+
+  const num = (v: unknown, fallback = 0) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? n : fallback
+  }
+  const roomMaxPeople = num(room.maxPeople, 0)
+
+  return {
+    fixedPriceId: rule ? num(rule.id) : null,
+    fixedPriceName: rule ? String(rule.name ?? '') : null,
+    roomMaxPeople,
+    // ルールが無ければ部屋の設定を初期値にする
+    basePeople: rule ? num(rule.roomPriceGuests) : roomMaxPeople,
+    extraPersonPrice: rule ? num(rule.extraPersonPrice) : 0,
+    minNights: rule ? num(rule.minNights, 1) : num(room.minStay, 1),
+    maxNights: rule ? num(rule.maxNights, 0) : num(room.maxStay, 0),
+    minAdvance: rule ? num(rule.minAdvance) : 0,
+    maxAdvance: rule ? num(rule.maxAdvance) : 0,
+  }
+}
+
+/**
+ * 基本設定をBeds24へ反映する。既存ルールがあれば変更、無ければ新規作成する。
+ * 新規作成時も価格自体は日別カレンダーの値を使う（roomPriceEnable: false）。
+ */
+export async function updateBaseSettings(
+  token: string,
+  roomId: string,
+  settings: Beds24BaseSettings,
+  existing: { fixedPriceId: number | null; name?: string | null },
+): Promise<{ fixedPriceId: number; created: boolean }> {
+  const common = {
+    minNights: settings.minNights,
+    maxNights: settings.maxNights,
+    minAdvance: settings.minAdvance,
+    maxAdvance: settings.maxAdvance,
+    roomPriceGuests: settings.basePeople,
+    extraPersonPrice: settings.extraPersonPrice,
+    extraPersonPriceEnable: settings.extraPersonPrice > 0,
+  }
+
+  const entry = existing.fixedPriceId
+    ? { id: existing.fixedPriceId, ...common }
+    : {
+        roomId: Number(roomId) || roomId,
+        name: '基本設定（GuestFollow）',
+        // 価格は日別カレンダーの値をそのまま使う
+        roomPriceEnable: false,
+        firstNight: new Date().toISOString().slice(0, 10),
+        lastNight: `${new Date().getFullYear() + 5}-12-31`,
+        ...common,
+      }
+
+  const raw = await beds24Fetch('/inventory/fixedPrices', token, {
+    method: 'POST',
+    body: JSON.stringify([entry]),
+  })
+  const arr = (Array.isArray(raw) ? raw : (raw?.data ?? [])) as Record<string, unknown>[]
+  const first = arr[0] ?? {}
+  if (first.success === false) {
+    const errors = first.errors as { message?: string }[] | undefined
+    throw new Error(errors?.[0]?.message ?? '基本設定の反映に失敗しました')
+  }
+  const newId = Number((first.new as { id?: unknown } | undefined)?.id ?? existing.fixedPriceId ?? 0)
+  return { fixedPriceId: newId, created: !existing.fixedPriceId }
+}
