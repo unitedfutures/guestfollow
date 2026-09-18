@@ -51,9 +51,9 @@ export async function GET(request: Request) {
 // 基本設定をBeds24へ反映
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}))
-  const { facility_id, room_id, settings, fixed_price_id, allow_create } = body as {
+  const { facility_id, room_id, settings, rule_ids } = body as {
     facility_id?: string; room_id?: string; settings?: Partial<Beds24BaseSettings>
-    fixed_price_id?: number | null; allow_create?: boolean
+    rule_ids?: number[]
   }
   const loaded = await loadFacility(request, facility_id ?? null)
   if (loaded.error) return loaded.error
@@ -70,9 +70,9 @@ export async function POST(request: Request) {
     minAdvance: int(settings?.minAdvance),
     maxAdvance: int(settings?.maxAdvance),
   }
-  if (!inRange(clean.basePeople, 0, 99)) return NextResponse.json({ error: '基本人数は0〜99で入力してください（0で定員を使用）' }, { status: 400 })
+  if (!inRange(clean.basePeople, 0, 99)) return NextResponse.json({ error: '基本人数は0〜99で入力してください（0で定員まで）' }, { status: 400 })
   if (!inRange(clean.extraPersonPrice, 0, 10_000_000)) return NextResponse.json({ error: '人数追加料金が正しくありません' }, { status: 400 })
-  if (!inRange(clean.minNights, 0, 99)) return NextResponse.json({ error: '最低宿泊日数は0〜99で入力してください' }, { status: 400 })
+  if (!inRange(clean.minNights, 1, 30)) return NextResponse.json({ error: '最低宿泊日数は1〜30で入力してください' }, { status: 400 })
   if (!inRange(clean.maxNights, 1, 365)) return NextResponse.json({ error: '最大宿泊日数は1〜365で入力してください' }, { status: 400 })
   if (clean.maxNights < clean.minNights) return NextResponse.json({ error: '最大宿泊日数は最低宿泊日数以上にしてください' }, { status: 400 })
   if (!inRange(clean.minAdvance, 0, 999) || !inRange(clean.maxAdvance, 0, 999)) {
@@ -89,13 +89,15 @@ export async function POST(request: Request) {
       error: '基本設定の反映には書き込み権限が必要です。設定 → サイトコントローラー連携で、write:inventory スコープを含む invite code から「Refresh Token」を設定してください。',
     }, { status: 400 })
   }
-  // Beds24に「日別料金」が無い場合の新規作成は、画面で同意を得てから行う
-  if (!fixed_price_id && !allow_create) {
-    return NextResponse.json({ error: 'Beds24に日別料金の設定が無いため、新規作成の確認が必要です' }, { status: 400 })
+  // 反映先は使用中の日別料金（OTAごと）。枠番号は1〜16
+  const ids = [...new Set((rule_ids ?? []).map(n => Math.floor(Number(n))))]
+    .filter(n => Number.isInteger(n) && n >= 1 && n <= 16)
+  if (ids.length === 0) {
+    return NextResponse.json({ error: '反映先の日別料金がありません。Beds24で日別料金を設定してください。' }, { status: 400 })
   }
 
   try {
-    const result = await updateBaseSettings(token, room_id, clean, { fixedPriceId: fixed_price_id ?? null })
+    const result = await updateBaseSettings(token, loaded.facility.beds24_property_id!, room_id, clean, ids)
     return NextResponse.json({ success: true, ...result })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

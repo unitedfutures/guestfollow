@@ -371,108 +371,134 @@ export async function beds24RawFetch(path: string, apiKey: string) {
   return { status: res.status, ok: res.ok, body: text }
 }
 
+
 // ============================================================
-// 基本設定（Beds24の「日別料金」のルール = fixedPrices）
-//   基本人数・人数追加料金・最低/最大宿泊日数・チェックインまでの日数を扱う。
-//   ※ fixedPrices は作成・変更のみでAPIから削除できない（Beds24の画面で削除する）。
+// 基本設定（Beds24の「価格 → 日別料金」のルール = priceRules）
+//   Beds24では1部屋に16枠の日別料金があり、OTAごとに枠を分けて設定する。
+//   GuestFollowでは、使用中の全ルール（全OTA）に同じ値を反映する。
 // ============================================================
 
 export interface Beds24BaseSettings {
-  basePeople: number        // roomPriceGuests（0 = 定員を使う）
-  extraPersonPrice: number  // extraPersonPrice
-  minNights: number         // minNights
-  maxNights: number         // maxNights
-  minAdvance: number        // minAdvance（何日後以降のチェックインを受け付けるか）
-  maxAdvance: number        // maxAdvance（何日先までのチェックインを受け付けるか。0 = 制限なし）
+  basePeople: number        // 基本人数（priceFor.upToPersonValue。0 = 定員まで）
+  extraPersonPrice: number  // 人数追加料金（extraPerson）
+  minNights: number         // 最低宿泊日数（minimumStay）
+  maxNights: number         // 最大宿泊日数（maximumStay）
+  minAdvance: number        // チェックインまでの日数・最短（minDaysUntilCheckin）
+  maxAdvance: number        // チェックインまでの日数・最長（maxDaysUntilCheckin）
 }
 
-export interface Beds24BaseSettingsState extends Beds24BaseSettings {
-  fixedPriceId: number | null   // 既存ルールのID（null なら未作成）
-  fixedPriceName: string | null
-  roomMaxPeople: number         // 部屋の定員（基本人数の初期値・上限の目安）
+/** 使用中の日別料金ルール1件（OTAごと） */
+export interface Beds24PriceRule extends Beds24BaseSettings {
+  id: number          // 枠番号（1〜16）
+  name: string        // Beds24で付けた名前（例: AirBnB / Booking.com）
+  channels: string[]  // 有効なOTA
 }
 
-/** 部屋の「日別料金」ルールと部屋設定から、基本設定の現在値を読み取る */
+export interface Beds24BaseSettingsState {
+  rules: Beds24PriceRule[]        // 使用中のルール（全OTA）
+  defaults: Beds24BaseSettings    // 画面の初期値（値が入っているルールから採用）
+  roomMaxPeople: number           // 部屋の定員
+}
+
+/** 使用中のルールから初期値を決める。値がばらけている場合は最も多い値を採用する */
+function pickDefault(values: number[], fallback: number): number {
+  const filled = values.filter(v => Number.isFinite(v))
+  if (filled.length === 0) return fallback
+  const counts = new Map<number, number>()
+  for (const v of filled) counts.set(v, (counts.get(v) ?? 0) + 1)
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]
+}
+
+/** 部屋の日別料金ルール（全OTA）と部屋設定から、基本設定の現在値を読み取る */
 export async function getBaseSettings(
   token: string, propertyId: string, roomId: string
 ): Promise<Beds24BaseSettingsState> {
-  const [propRaw, fixedRaw] = await Promise.all([
-    beds24Fetch(`/properties?id=${encodeURIComponent(propertyId)}&includeAllRooms=true`, token),
-    beds24Fetch(`/inventory/fixedPrices?roomId=${encodeURIComponent(roomId)}`, token),
-  ])
-  const rooms = ((propRaw?.data ?? [])[0]?.roomTypes ?? []) as Record<string, unknown>[]
+  const raw = await beds24Fetch(
+    `/properties?id=${encodeURIComponent(propertyId)}&includeAllRooms=true&includePriceRules=true`,
+    token
+  )
+  const rooms = ((raw?.data ?? [])[0]?.roomTypes ?? []) as Record<string, unknown>[]
   const room = rooms.find(r => String(r.id) === String(roomId)) ?? {}
-
-  // 「日別料金 1」に当たる最も古いルールを基本設定として扱う。
-  // ただし期間が過去で終わっているルールは、今後の予約に効かないため対象外にする。
-  const today = new Date().toISOString().slice(0, 10)
-  const rules = ((fixedRaw?.data ?? []) as Record<string, unknown>[])
-    .filter(r => !r.lastNight || String(r.lastNight) >= today)
-    .sort((a, b) => Number(a.id) - Number(b.id))
-  const rule = rules[0]
-
   const num = (v: unknown, fallback = 0) => {
     const n = Number(v)
     return Number.isFinite(n) ? n : fallback
   }
-  const roomMaxPeople = num(room.maxPeople, 0)
+  const roomMaxPeople = num(room.maxPeople)
+
+  // 未使用の枠は値が入っていないので除く
+  const rules: Beds24PriceRule[] = ((room.priceRules ?? []) as Record<string, unknown>[])
+    .filter(r => r.priceFor !== undefined || r.extraPerson !== undefined)
+    .map(r => {
+      const priceFor = (r.priceFor ?? {}) as { type?: string; upToPersonValue?: number | null }
+      const channels = Object.entries((r.channels ?? {}) as Record<string, { enable?: boolean }>)
+        .filter(([, v]) => v?.enable)
+        .map(([k]) => k)
+      return {
+        id: num(r.id),
+        name: String(r.name ?? ''),
+        channels,
+        // upToPerson 以外（定員まで／1人あたり）は 0 = 定員 として扱う
+        basePeople: priceFor.type === 'upToPerson' ? num(priceFor.upToPersonValue) : 0,
+        extraPersonPrice: num(r.extraPerson),
+        minNights: num(r.minimumStay, 1),
+        maxNights: num(r.maximumStay, 0),
+        minAdvance: num(r.minDaysUntilCheckin),
+        maxAdvance: num(r.maxDaysUntilCheckin),
+      }
+    })
 
   return {
-    fixedPriceId: rule ? num(rule.id) : null,
-    fixedPriceName: rule ? String(rule.name ?? '') : null,
+    rules,
     roomMaxPeople,
-    // ルールが無ければ部屋の設定を初期値にする
-    basePeople: rule ? num(rule.roomPriceGuests) : roomMaxPeople,
-    extraPersonPrice: rule ? num(rule.extraPersonPrice) : 0,
-    minNights: rule ? num(rule.minNights, 1) : num(room.minStay, 1),
-    maxNights: rule ? num(rule.maxNights, 0) : num(room.maxStay, 0),
-    minAdvance: rule ? num(rule.minAdvance) : 0,
-    maxAdvance: rule ? num(rule.maxAdvance) : 0,
+    defaults: {
+      basePeople: pickDefault(rules.map(r => r.basePeople), roomMaxPeople),
+      extraPersonPrice: pickDefault(rules.map(r => r.extraPersonPrice), 0),
+      minNights: pickDefault(rules.map(r => r.minNights), num(room.minStay, 1)),
+      maxNights: pickDefault(rules.map(r => r.maxNights), num(room.maxStay, 365)),
+      minAdvance: pickDefault(rules.map(r => r.minAdvance), 0),
+      maxAdvance: pickDefault(rules.map(r => r.maxAdvance), 999),
+    },
   }
 }
 
 /**
- * 基本設定をBeds24へ反映する。既存ルールがあれば変更、無ければ新規作成する。
- * 新規作成時も価格自体は日別カレンダーの値を使う（roomPriceEnable: false）。
+ * 基本設定を、使用中のすべての日別料金ルール（全OTA）へ反映する。
+ * Beds24: POST /properties の roomTypes[].priceRules[]（枠番号で更新）
  */
 export async function updateBaseSettings(
   token: string,
+  propertyId: string,
   roomId: string,
   settings: Beds24BaseSettings,
-  existing: { fixedPriceId: number | null; name?: string | null },
-): Promise<{ fixedPriceId: number; created: boolean }> {
-  const common = {
-    minNights: settings.minNights,
-    maxNights: settings.maxNights,
-    minAdvance: settings.minAdvance,
-    maxAdvance: settings.maxAdvance,
-    roomPriceGuests: settings.basePeople,
-    extraPersonPrice: settings.extraPersonPrice,
-    extraPersonPriceEnable: settings.extraPersonPrice > 0,
-  }
+  ruleIds: number[],
+): Promise<{ updated: number }> {
+  if (ruleIds.length === 0) throw new Error('反映先の日別料金がありません')
 
-  const entry = existing.fixedPriceId
-    ? { id: existing.fixedPriceId, ...common }
-    : {
-        roomId: Number(roomId) || roomId,
-        name: '基本設定（GuestFollow）',
-        // 価格は日別カレンダーの値をそのまま使う
-        roomPriceEnable: false,
-        firstNight: new Date().toISOString().slice(0, 10),
-        lastNight: `${new Date().getFullYear() + 5}-12-31`,
-        ...common,
-      }
+  const priceRules = ruleIds.map(id => ({
+    id,
+    // 0 は「定員まで」を意味する
+    priceFor: settings.basePeople > 0
+      ? { type: 'upToPerson', upToPersonValue: settings.basePeople }
+      : { type: 'maxCapacity' },
+    extraPerson: settings.extraPersonPrice,
+    minimumStay: settings.minNights,
+    maximumStay: settings.maxNights,
+    minDaysUntilCheckin: settings.minAdvance,
+    maxDaysUntilCheckin: settings.maxAdvance,
+  }))
 
-  const raw = await beds24Fetch('/inventory/fixedPrices', token, {
+  const raw = await beds24Fetch('/properties', token, {
     method: 'POST',
-    body: JSON.stringify([entry]),
+    body: JSON.stringify([{
+      id: Number(propertyId) || propertyId,
+      roomTypes: [{ id: Number(roomId) || roomId, priceRules }],
+    }]),
   })
   const arr = (Array.isArray(raw) ? raw : (raw?.data ?? [])) as Record<string, unknown>[]
   const first = arr[0] ?? {}
   if (first.success === false) {
-    const errors = first.errors as { message?: string }[] | undefined
-    throw new Error(errors?.[0]?.message ?? '基本設定の反映に失敗しました')
+    const errors = first.errors as { message?: string; field?: string }[] | undefined
+    throw new Error(errors?.map(e => e.message).filter(Boolean).join(' / ') || '基本設定の反映に失敗しました')
   }
-  const newId = Number((first.new as { id?: unknown } | undefined)?.id ?? existing.fixedPriceId ?? 0)
-  return { fixedPriceId: newId, created: !existing.fixedPriceId }
+  return { updated: ruleIds.length }
 }
