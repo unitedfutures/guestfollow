@@ -403,9 +403,11 @@ export async function getBaseSettings(
   const rooms = ((propRaw?.data ?? [])[0]?.roomTypes ?? []) as Record<string, unknown>[]
   const room = rooms.find(r => String(r.id) === String(roomId)) ?? {}
 
-  // 「日別料金 1」に当たる最も古いルールを基本設定として扱う
+  // 「日別料金 1」に当たる最も古いルールを基本設定として扱う。
+  // ただし期間が過去で終わっているルールは、今後の予約に効かないため対象外にする。
+  const today = new Date().toISOString().slice(0, 10)
   const rules = ((fixedRaw?.data ?? []) as Record<string, unknown>[])
-    .slice()
+    .filter(r => !r.lastNight || String(r.lastNight) >= today)
     .sort((a, b) => Number(a.id) - Number(b.id))
   const rule = rules[0]
 
