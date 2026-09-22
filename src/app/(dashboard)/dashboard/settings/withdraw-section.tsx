@@ -72,7 +72,7 @@ export function WithdrawSection({ ownFacilityCount, email }: { ownFacilityCount:
           <AlertTriangle size={14} className="shrink-0 mt-0.5 text-amber-500" />
           <span>
             宿泊者名簿は、旅館業法等により事業者に一定期間の保存が義務付けられています。退会前に、
-            <Link href="/dashboard" className="text-navy-700 hover:underline font-medium">予約一覧</Link>
+            <Link href="/dashboard/bookings" className="text-navy-700 hover:underline font-medium">予約一覧</Link>
             の「CSV出力」などで必要なデータを保存してください。Beds24・Airhost側のデータは削除されません。
           </span>
         </div>

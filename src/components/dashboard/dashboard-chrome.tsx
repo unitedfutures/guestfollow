@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   Building2, Settings, LogOut, LayoutDashboard, ClipboardList, MessageSquare,
-  TrendingUp, Menu, X, ClipboardCheck, Coins, Tag,
+  TrendingUp, Menu, X, ClipboardCheck, Coins, Tag, BarChart3,
 } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
@@ -13,19 +13,20 @@ import { Logo } from '@/components/logo'
 import { ScrollToTop } from '@/components/dashboard/scroll-to-top'
 
 const navItems = [
-  { href: '/dashboard', label: '予約一覧', icon: LayoutDashboard, exact: true },
-  { href: '/dashboard/messages', label: 'メッセージ', icon: MessageSquare },
-  { href: '/dashboard/pricing', label: '宿泊価格', icon: Tag },
-  { href: '/dashboard/facilities', label: '施設管理', icon: Building2 },
-  { href: '/dashboard/surveys', label: 'アンケート結果', icon: ClipboardList },
-  { href: '/dashboard/reports', label: '売上レポート', icon: TrendingUp },
-  { href: '/dashboard/minpaku-report', label: '宿泊実績報告', icon: ClipboardCheck },
-  { href: '/dashboard/accommodation-tax', label: '宿泊税計算', icon: Coins },
-  { href: '/dashboard/settings', label: '設定', icon: Settings },
+  { href: '/dashboard', label: '経営管理', icon: BarChart3, exact: true },
+  { href: '/dashboard/bookings', label: '予約一覧', icon: LayoutDashboard, exact: true },
+  { href: '/dashboard/messages', label: 'メッセージ', icon: MessageSquare, exact: false },
+  { href: '/dashboard/pricing', label: '宿泊価格', icon: Tag, exact: false },
+  { href: '/dashboard/facilities', label: '施設管理', icon: Building2, exact: false },
+  { href: '/dashboard/surveys', label: 'アンケート結果', icon: ClipboardList, exact: false },
+  { href: '/dashboard/reports', label: '売上レポート', icon: TrendingUp, exact: false },
+  { href: '/dashboard/minpaku-report', label: '宿泊実績報告', icon: ClipboardCheck, exact: false },
+  { href: '/dashboard/accommodation-tax', label: '宿泊税計算', icon: Coins, exact: false },
+  { href: '/dashboard/settings', label: '設定', icon: Settings, exact: false },
 ]
 
 const cleanerNavItems = [
-  { href: '/dashboard', label: '清掃予定', icon: LayoutDashboard, exact: true },
+  { href: '/dashboard/bookings', label: '清掃予定', icon: LayoutDashboard, exact: true },
 ]
 
 export function DashboardChrome({
