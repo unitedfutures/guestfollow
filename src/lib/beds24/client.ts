@@ -1,3 +1,5 @@
+import { pickCountryCode } from '@/lib/geo/iso-countries'
+
 const BEDS24_BASE_URL = 'https://beds24.com/api/v2'
 
 // ============================================================
@@ -338,7 +340,9 @@ export async function getBookings(
         commission: Number(b.commission ?? b.commissionAmount ?? 0) || 0,
         roomCharge: roomChargeFromInvoiceItems(b.invoiceItems, Number(b.price ?? 0) || 0),
         invoiceTotal: invoiceTotalFromItems(b.invoiceItems, Number(b.price ?? 0) || 0),
-        guestCountry: String(b.country2 ?? b.country ?? '').trim().toUpperCase(),
+        // country には言語コードが入ることがある（Airbnbは country2 が空で country="ja"）。
+        // 実在する国コードだけを採用し、そうでなければ未取得として扱う
+        guestCountry: pickCountryCode(b.country2 as string, b.country as string),
         otaStatus: status === 'cancelled' ? 'cancelled' : 'confirmed',
       }
     })

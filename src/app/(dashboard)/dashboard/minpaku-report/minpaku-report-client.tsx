@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from 'react'
 import { ChevronDown, CalendarDays, Download, FileText, Info, X, ClipboardCheck } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
-import { countryNameJa, isJapan } from '@/lib/geo/country-names'
+import { NATIONALITY_BUCKETS, UNKNOWN_BUCKET, bucketFromCountryCode, bucketFromNationality } from '@/lib/geo/nationality-buckets'
 
 type Facility = { id: string; name: string }
 type Booking = {
@@ -108,13 +108,12 @@ export function MinpakuReportClient({
     return (b: Booking): string => {
       const rec = m.get(b.id)
       if (rec && (rec.is_foreign || rec.nationality?.trim())) {
-        if (rec.is_foreign) return (rec.nationality?.trim() || '外国（国籍不明）')
+        // 外国人は入力された国籍を区分に寄せる（判定できない国は「その他」）
+        if (rec.is_foreign) return bucketFromNationality(rec.nationality) === UNKNOWN_BUCKET ? 'その他' : bucketFromNationality(rec.nationality)
         return '日本'
       }
       // 名簿が無い/国籍未入力なら OTA の国コードを使う
-      const cc = b.guest_country?.trim()
-      if (cc) return isJapan(cc) ? '日本' : countryNameJa(cc)
-      return '未登録'
+      return bucketFromCountryCode(b.guest_country)
     }
   }, [guestRecords])
 
@@ -174,25 +173,23 @@ export function MinpakuReportClient({
     return { rows, totals }
   }, [facilities, bookings, period, natOf])
 
-  // 全施設で登場する外国国籍の一覧（日本・未登録を除く）
-  const foreignNats = useMemo(() => {
-    const s = new Set<string>()
-    for (const r of rows) for (const k of Object.keys(r.byNat)) if (k !== '日本' && k !== '未登録') s.add(k)
-    return [...s].sort()
-  }, [rows])
+  // 国籍区分は固定の並び（観光庁の宿泊旅行統計と同じ21区分＋その他）。日本は別列で出す
+  const foreignNats = NATIONALITY_BUCKETS.filter(n => n !== '日本')
+  const natTotal = (nat: string) => rows.reduce((s, r) => s + (r.byNat[nat] ?? 0), 0)
 
   const jpOf = (r: FacilityAgg) => r.byNat['日本'] ?? 0
-  const unknownOf = (r: FacilityAgg) => r.byNat['未登録'] ?? 0
+  const unknownOf = (r: FacilityAgg) => r.byNat[UNKNOWN_BUCKET] ?? 0
   const foreignOf = (r: FacilityAgg) => r.guestNights - jpOf(r) - unknownOf(r)
 
   const periodTag = period.start.replace(/-/g, '').slice(0, 6)
   const baseName = `宿泊実績報告_${periodTag}`
 
   const handleCsv = () => {
-    const head = ['施設名', '届出番号', '宿泊日数(実稼働日)', '宿泊者数', '延べ宿泊者数', '日本人(延べ)', '外国人(延べ)', '国籍未登録(延べ)', ...foreignNats.map(n => `${n}(延べ)`)]
+    const head = ['施設名', '届出番号', '宿泊日数(実稼働日)', '宿泊者数', '延べ宿泊者数', '日本人(延べ)', '外国人(延べ)', '国籍未登録(延べ)',
+      '日本(延べ)', ...foreignNats.map(n => `${n}(延べ)`)]
     const lines = rows.map(r => [
       r.facility.name, '', r.distinctNights, r.guests, r.guestNights, jpOf(r), foreignOf(r), unknownOf(r),
-      ...foreignNats.map(n => r.byNat[n] ?? 0),
+      jpOf(r), ...foreignNats.map(n => r.byNat[n] ?? 0),
     ])
     const bom = '﻿'
     const meta = [
@@ -243,6 +240,9 @@ export function MinpakuReportClient({
   td.c{text-align:center} td.b{font-weight:800;color:#1e293b} td.muted{color:#b45309}
   tfoot td{font-weight:800;background:#f8fafc}
   .note{margin-top:14px;font-size:10px;color:#6b7280;line-height:1.8}
+  h2.sub{font-size:13px;margin:22px 0 4px;color:#1e293b}
+  table.nat th,table.nat td{padding:5px 6px;font-size:10px}
+  table.nat tr.zero td{color:#9ca3af}
   @media print{body{margin:12mm}}
 </style></head><body>
   <div class="head">
@@ -265,6 +265,15 @@ export function MinpakuReportClient({
       <td class="c">${rows.reduce((s, r) => s + foreignOf(r), 0)}</td>
       <td class="c">${rows.reduce((s, r) => s + unknownOf(r), 0)}</td>
     </tr></tfoot>
+  </table>
+  <h2 class="sub">国籍別内訳（延べ宿泊者数・人泊）</h2>
+  <table class="nat">
+    <thead><tr><th>国籍区分</th>${rows.map(r => `<th>${esc(r.facility.name)}</th>`).join('')}<th>合計</th></tr></thead>
+    <tbody>${['日本', ...foreignNats, UNKNOWN_BUCKET].map(nat => {
+      const total = nat === UNKNOWN_BUCKET ? rows.reduce((t, r) => t + unknownOf(r), 0) : natTotal(nat)
+      const cls = total === 0 ? ' class="zero"' : ''
+      return `<tr${cls}><td>${esc(nat === UNKNOWN_BUCKET ? '国籍未登録' : nat)}</td>${rows.map(r => `<td class="c">${r.byNat[nat] ?? 0}</td>`).join('')}<td class="c b">${total}</td></tr>`
+    }).join('')}</tbody>
   </table>
   <div class="note">
     ※ 宿泊日数＝届出住宅に人を宿泊させた実日数（同日に複数予約があっても1日）。宿泊者数＝実人数。延べ宿泊者数＝人数×泊数（人泊）。<br>
@@ -360,8 +369,12 @@ export function MinpakuReportClient({
               <tbody className="divide-y divide-gray-100">
                 {rows.map(r => {
                   const isOpen = expanded.has(r.facility.id)
-                  // 国籍内訳（延べ人泊の多い順）
-                  const natEntries = Object.entries(r.byNat).sort((a, b) => b[1] - a[1])
+                  // 国籍内訳は固定の区分順。0人泊の区分も並べて報告書と対応させる
+                  const natEntries: [string, number][] = [
+                    ['日本', r.byNat['日本'] ?? 0],
+                    ...foreignNats.map(n => [n, r.byNat[n] ?? 0] as [string, number]),
+                    [UNKNOWN_BUCKET, unknownOf(r)],
+                  ]
                   return (
                     <Fragment key={r.facility.id}>
                       <tr
@@ -390,11 +403,13 @@ export function MinpakuReportClient({
                               <p className="text-xs font-semibold text-gray-600 mb-2">国籍内訳（延べ宿泊者数・人泊）</p>
                               <div className="flex flex-wrap gap-1.5">
                                 {natEntries.map(([nat, n]) => {
-                                  const tone = nat === '日本'
-                                    ? 'text-blue-700 bg-blue-50 border-blue-200'
-                                    : nat === '未登録'
-                                      ? 'text-amber-700 bg-amber-50 border-amber-200'
-                                      : 'text-emerald-700 bg-emerald-50 border-emerald-200'
+                                  const tone = n === 0
+                                    ? 'text-gray-400 bg-gray-50 border-gray-200'
+                                    : nat === '日本'
+                                      ? 'text-blue-700 bg-blue-50 border-blue-200'
+                                      : nat === UNKNOWN_BUCKET
+                                        ? 'text-amber-700 bg-amber-50 border-amber-200'
+                                        : 'text-emerald-700 bg-emerald-50 border-emerald-200'
                                   return (
                                     <span key={nat} className={`text-xs font-medium px-2 py-1 rounded-lg border ${tone}`}>
                                       {nat}：{n}人泊
@@ -429,7 +444,7 @@ export function MinpakuReportClient({
                                       <td className="px-3 py-2 text-center text-gray-700">{d.nightsInPeriod}</td>
                                       <td className="px-3 py-2 text-center font-semibold text-navy-700">{d.guestNights}</td>
                                       <td className="px-3 py-2">
-                                        <span className={d.nat === '未登録' ? 'text-amber-600' : 'text-gray-700'}>{d.nat}</span>
+                                        <span className={d.nat === UNKNOWN_BUCKET ? 'text-amber-600' : 'text-gray-700'}>{d.nat}</span>
                                       </td>
                                     </tr>
                                   ))}
