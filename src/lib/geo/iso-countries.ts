@@ -35,3 +35,37 @@ export function pickCountryCode(...candidates: (string | null | undefined)[]): s
   }
   return ''
 }
+
+// ============================================================
+// 国コードが取れない予約の推定
+//   Airbnb経由などで国情報が無い場合に、言語と電話番号から国を推定する。
+//   あくまで推定なので、確定した国コードとは別に保持する。
+// ============================================================
+
+// 話者がほぼ1国に限られる言語だけを対象にする（en/de/fr/es などは推定しない）
+const LANG_TO_COUNTRY: Record<string, string> = {
+  ja: 'JP', ko: 'KR', th: 'TH', vi: 'VN', id: 'ID', ru: 'RU', it: 'IT',
+  zh: 'CN', 'zh-cn': 'CN', 'zh-hans': 'CN', 'zh-tw': 'TW', 'zh-hant': 'TW',
+}
+
+/** 電話番号から国を推定する。日本の携帯・固定番号（0始まり）と +81 に対応 */
+export function countryFromPhone(phone: string | null | undefined): string {
+  const raw = (phone ?? '').replace(/[^\d+]/g, '')
+  if (!raw) return ''
+  if (raw.startsWith('+81') || raw.startsWith('81')) return 'JP'
+  // 国番号なしの国内表記（090/080/070/03 など）は日本とみなす
+  if (/^0\d{8,10}$/.test(raw)) return 'JP'
+  return ''
+}
+
+/** 言語コードから国を推定する（1国に特定できる言語のみ） */
+export function countryFromLang(lang: string | null | undefined): string {
+  const l = (lang ?? '').trim().toLowerCase()
+  if (!l) return ''
+  return LANG_TO_COUNTRY[l] ?? LANG_TO_COUNTRY[l.split(/[-_]/)[0]] ?? ''
+}
+
+/** 電話番号 → 言語 の順で国を推定する。推定できなければ空文字 */
+export function guessCountryCode(phone: string | null | undefined, lang: string | null | undefined): string {
+  return countryFromPhone(phone) || countryFromLang(lang)
+}

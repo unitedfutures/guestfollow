@@ -17,12 +17,16 @@ export function beds24SyncedFields(b: Beds24Booking) {
     room_charge: b.roomCharge,
     invoice_total: b.invoiceTotal,
     guest_country: b.guestCountry || null,
+    guest_country_guess: b.guestCountryGuess || null,
     ota_status: b.otaStatus,
     ota_channel: b.channel || null,
   }
 }
 
 type Payload = Record<string, unknown>
+
+// 後から追加した列（SQLを実行していない環境では存在しないことがある）
+const OPTIONAL_COLUMNS = ['invoice_total', 'guest_country_guess'] as const
 
 /** その列がまだ存在しないことによるエラーか */
 export function isMissingColumn(error: { code?: string; message?: string } | null, column: string): boolean {
@@ -45,12 +49,15 @@ export async function writeBooking(
       ? supabase.from('bookings').update(p).eq('id', target.id)
       : supabase.from('bookings').insert(p)
 
-  const { error } = await run(payload)
-  // 列が無い場合のコードは経路で異なる（42703: Postgres / PGRST204: PostgRESTのスキーマキャッシュ）
-  if (isMissingColumn(error, 'invoice_total') && 'invoice_total' in payload) {
-    const { invoice_total: _omitted, ...rest } = payload
-    const retry = await run(rest)
-    return { error: retry.error }
+  // SQL未実行で列が無い場合は、その列を外して書き直す（同期自体は成功させる）
+  let current = payload
+  for (let i = 0; i < OPTIONAL_COLUMNS.length + 1; i++) {
+    const { error } = await run(current)
+    if (!error) return { error: null }
+    const missing = OPTIONAL_COLUMNS.find(c => c in current && isMissingColumn(error, c))
+    if (!missing) return { error }
+    const { [missing]: _omitted, ...rest } = current
+    current = rest
   }
-  return { error }
+  return { error: null }
 }

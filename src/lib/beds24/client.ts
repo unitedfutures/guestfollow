@@ -1,4 +1,4 @@
-import { pickCountryCode } from '@/lib/geo/iso-countries'
+import { guessCountryCode, pickCountryCode } from '@/lib/geo/iso-countries'
 
 const BEDS24_BASE_URL = 'https://beds24.com/api/v2'
 
@@ -135,7 +135,8 @@ export interface Beds24Booking {
   commission: number   // OTA手数料（Beds24が返す実額。無ければ0）
   roomCharge: number   // 宿泊料のみ（清掃料等を除く。宿泊税の課税標準用）
   invoiceTotal: number // 請求合計（宿泊料＋人数追加・清掃料金等、割引も反映）＝ 売上
-  guestCountry: string // ゲストの国コード（ISO alpha-2、大文字。例 JP / US）
+  guestCountry: string      // ゲストの国コード（ISO alpha-2、大文字。例 JP / US）
+  guestCountryGuess: string // 電話番号・言語からの推定国コード（確定ではない）
   otaStatus: string   // 'confirmed' | 'cancelled'
 }
 
@@ -343,6 +344,11 @@ export async function getBookings(
         // country には言語コードが入ることがある（Airbnbは country2 が空で country="ja"）。
         // 実在する国コードだけを採用し、そうでなければ未取得として扱う
         guestCountry: pickCountryCode(b.country2 as string, b.country as string),
+        // 国情報が無い予約（Airbnb経由など）向けに、電話番号と言語から推定した国
+        guestCountryGuess: guessCountryCode(
+          (b.phone ?? b.mobile) as string,
+          b.lang as string,
+        ),
         otaStatus: status === 'cancelled' ? 'cancelled' : 'confirmed',
       }
     })

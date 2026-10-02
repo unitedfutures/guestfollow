@@ -16,6 +16,7 @@ type Booking = {
   ota_status: string | null
   ota_channel: string | null
   guest_country: string | null
+  guest_country_guess?: string | null
 }
 
 type BookingDetail = {
@@ -28,6 +29,7 @@ type BookingDetail = {
   nightsInPeriod: number
   guestNights: number
   nat: string
+  estimated: boolean  // 電話番号・言語からの推定で区分したか
 }
 type GuestRecord = { booking_id: string; nationality: string | null; is_foreign: boolean | null }
 
@@ -80,6 +82,7 @@ type FacilityAgg = {
   guests: number          // 宿泊者数（実人数）
   guestNights: number     // 延べ宿泊者数（人泊）
   byNat: Record<string, number> // 国籍別 延べ宿泊者数
+  estimatedGuestNights: number  // うち推定で区分した延べ宿泊者数
   details: BookingDetail[]      // 期間内の宿泊明細
 }
 
@@ -102,27 +105,40 @@ export function MinpakuReportClient({
 
   // 予約 → 国籍バケツ
   //   優先順位：電子宿泊者名簿(guest_records) ＞ OTAのゲスト国コード(guest_country) ＞ 未登録
+  // 国情報が無い予約を、電話番号・言語から推定して集計に含めるか
+  const [useEstimate, setUseEstimate] = useState(true)
+
   const natOf = useMemo(() => {
     const m = new Map<string, GuestRecord>()
     for (const g of guestRecords) if (!m.has(g.booking_id)) m.set(g.booking_id, g)
-    return (b: Booking): string => {
+    return (b: Booking): { nat: string; estimated: boolean } => {
       const rec = m.get(b.id)
       if (rec && (rec.is_foreign || rec.nationality?.trim())) {
         // 外国人は入力された国籍を区分に寄せる（判定できない国は「その他」）
-        if (rec.is_foreign) return bucketFromNationality(rec.nationality) === UNKNOWN_BUCKET ? 'その他' : bucketFromNationality(rec.nationality)
-        return '日本'
+        if (rec.is_foreign) {
+          const nat = bucketFromNationality(rec.nationality)
+          return { nat: nat === UNKNOWN_BUCKET ? 'その他' : nat, estimated: false }
+        }
+        return { nat: '日本', estimated: false }
       }
       // 名簿が無い/国籍未入力なら OTA の国コードを使う
-      return bucketFromCountryCode(b.guest_country)
+      const fromCountry = bucketFromCountryCode(b.guest_country)
+      if (fromCountry !== UNKNOWN_BUCKET) return { nat: fromCountry, estimated: false }
+      // 国情報が無い予約は、電話番号・言語からの推定を使う（使うかは画面で選べる）
+      if (useEstimate) {
+        const guessed = bucketFromCountryCode(b.guest_country_guess)
+        if (guessed !== UNKNOWN_BUCKET) return { nat: guessed, estimated: true }
+      }
+      return { nat: UNKNOWN_BUCKET, estimated: false }
     }
-  }, [guestRecords])
+  }, [guestRecords, useEstimate])
 
   const { rows, totals } = useMemo(() => {
     const pStart = dayNum(period.start)
     const pEnd = dayNum(period.end) // 最終泊（含む）
     const map = new Map<string, FacilityAgg>()
     for (const f of facilities) {
-      map.set(f.id, { facility: f, nights: 0, distinctNights: 0, guests: 0, guestNights: 0, byNat: {}, details: [] })
+      map.set(f.id, { facility: f, nights: 0, distinctNights: 0, guests: 0, guestNights: 0, byNat: {}, estimatedGuestNights: 0, details: [] })
     }
     const distinctSet = new Map<string, Set<number>>() // facility_id → 稼働日集合
 
@@ -141,12 +157,13 @@ export function MinpakuReportClient({
       agg.nights += nights
       agg.guests += g
       agg.guestNights += g * nights
-      const nat = natOf(b)
+      const { nat, estimated } = natOf(b)
       agg.byNat[nat] = (agg.byNat[nat] ?? 0) + g * nights
+      if (estimated) agg.estimatedGuestNights += g * nights
       agg.details.push({
         id: b.id, guestName: b.guest_name, channel: b.ota_channel,
         checkin: b.checkin_date, checkout: b.checkout_date,
-        guests: g, nightsInPeriod: nights, guestNights: g * nights, nat,
+        guests: g, nightsInPeriod: nights, guestNights: g * nights, nat, estimated,
       })
 
       let set = distinctSet.get(b.facility_id)
@@ -181,6 +198,8 @@ export function MinpakuReportClient({
   const unknownOf = (r: FacilityAgg) => r.byNat[UNKNOWN_BUCKET] ?? 0
   const foreignOf = (r: FacilityAgg) => r.guestNights - jpOf(r) - unknownOf(r)
 
+  const estimatedTotal = rows.reduce((t, r) => t + r.estimatedGuestNights, 0)
+
   const periodTag = period.start.replace(/-/g, '').slice(0, 6)
   const baseName = `宿泊実績報告_${periodTag}`
 
@@ -195,6 +214,7 @@ export function MinpakuReportClient({
     const meta = [
       `対象期間,${period.start} 〜 ${period.end}`,
       `提出期限,${period.deadline}`,
+      `国籍の推定,${useEstimate ? `含む（電話番号・言語から推定：${estimatedTotal}人泊）` : '含まない'}`,
       '', // 空行
     ]
     const esc = (v: unknown) => `"${String(v).replace(/"/g, '""')}"`
@@ -250,6 +270,7 @@ export function MinpakuReportClient({
     <h1>住宅宿泊事業法 第14条 定期報告（宿泊実績）</h1>
     <div class="meta">
       対象期間：${esc(period.start)} 〜 ${esc(period.end)}　／　提出期限：${esc(period.deadline)}<br>
+      国籍の推定：${useEstimate ? `含む（電話番号・言語から推定：${estimatedTotal}人泊）` : '含まない'}<br>
       出力日：${today}
     </div>
   </div>
@@ -277,7 +298,7 @@ export function MinpakuReportClient({
   </table>
   <div class="note">
     ※ 宿泊日数＝届出住宅に人を宿泊させた実日数（同日に複数予約があっても1日）。宿泊者数＝実人数。延べ宿泊者数＝人数×泊数（人泊）。<br>
-    ※ 国籍別内訳は電子宿泊者名簿（事前登録）を優先し、無い場合はOTAのゲスト国情報から判定。「国籍未登録」はどちらも無い予約分です。提出前にご確認ください。<br>
+    ※ 国籍別内訳は電子宿泊者名簿（事前登録）＞OTAのゲスト国情報＞電話番号・言語からの推定 の順に判定しています。「国籍未登録」はいずれからも判定できなかった予約分です。提出前にご確認ください。<br>
     ※ キャンセル予約は除外。泊数は対象期間内に含まれる夜のみを計上しています。
   </div>
   <script>window.onload=function(){window.print()}</script>
@@ -332,6 +353,16 @@ export function MinpakuReportClient({
             提出期限：{period.deadline}
           </span>
         )}
+        {/* 国情報が無い予約（Airbnb経由など）の扱い */}
+        <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer ml-auto"
+          title="OTAから国情報が届かない予約を、電話番号（+81など）と言語から推定して国籍に振り分けます">
+          <input type="checkbox" checked={useEstimate} onChange={e => setUseEstimate(e.target.checked)}
+            className="rounded border-gray-300" />
+          国情報が無い予約を電話番号・言語から推定する
+          {useEstimate && estimatedTotal > 0 && (
+            <span className="text-gray-400">（推定 {estimatedTotal.toLocaleString()}人泊）</span>
+          )}
+        </label>
       </div>
 
       {/* サマリー */}
@@ -444,7 +475,9 @@ export function MinpakuReportClient({
                                       <td className="px-3 py-2 text-center text-gray-700">{d.nightsInPeriod}</td>
                                       <td className="px-3 py-2 text-center font-semibold text-navy-700">{d.guestNights}</td>
                                       <td className="px-3 py-2">
-                                        <span className={d.nat === UNKNOWN_BUCKET ? 'text-amber-600' : 'text-gray-700'}>{d.nat}</span>
+                                        <span className={d.nat === UNKNOWN_BUCKET ? 'text-amber-600' : 'text-gray-700'}>
+                                          {d.nat}{d.estimated && <span className="text-gray-400 text-[10px] ml-0.5">（推定）</span>}
+                                        </span>
                                       </td>
                                     </tr>
                                   ))}
@@ -481,7 +514,7 @@ export function MinpakuReportClient({
       )}
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        ※ 集計は予約データ（キャンセル除く）に基づきます。国籍別内訳は「電子宿泊者名簿（事前登録）」を優先し、名簿が無い予約はOTA（Beds24）のゲスト国情報から判定します。どちらも無い場合のみ「国籍未登録」に集計します。
+        ※ 集計は予約データ（キャンセル除く）に基づきます。国籍別内訳は「電子宿泊者名簿（事前登録）」＞「OTA（Beds24）のゲスト国情報」＞「電話番号・言語からの推定」の順に判定し、いずれも無い場合に「国籍未登録」へ集計します。Airbnb経由の予約はOTAから国情報が届かないため、推定を使わないと国籍未登録になります。
         提出前に内容をご確認のうえ、民泊制度運営システムへ入力・アップロードしてください。
       </p>
 
