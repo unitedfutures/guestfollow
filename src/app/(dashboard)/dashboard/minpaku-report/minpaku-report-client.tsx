@@ -104,7 +104,7 @@ export function MinpakuReportClient({
   const period = periods.find(p => p.id === periodId) ?? periods[0]
 
   // 予約 → 国籍バケツ
-  //   優先順位：電子宿泊者名簿(guest_records) ＞ OTAのゲスト国コード(guest_country) ＞ 未登録
+  //   優先順位：電子宿泊者名簿(guest_records) ＞ OTAのゲスト国コード(guest_country) ＞ 推定 ＞ 国籍不明
   // 国情報が無い予約を、電話番号・言語から推定して集計に含めるか
   const [useEstimate, setUseEstimate] = useState(true)
 
@@ -204,7 +204,7 @@ export function MinpakuReportClient({
   const baseName = `宿泊実績報告_${periodTag}`
 
   const handleCsv = () => {
-    const head = ['施設名', '届出番号', '宿泊日数(実稼働日)', '宿泊者数', '延べ宿泊者数', '日本人(延べ)', '外国人(延べ)', '国籍未登録(延べ)',
+    const head = ['施設名', '届出番号', '宿泊日数(実稼働日)', '宿泊者数', '延べ宿泊者数', '日本人(延べ)', '外国人(延べ)', '国籍不明(延べ)',
       '日本(延べ)', ...foreignNats.map(n => `${n}(延べ)`)]
     const lines = rows.map(r => [
       r.facility.name, '', r.distinctNights, r.guests, r.guestNights, jpOf(r), foreignOf(r), unknownOf(r),
@@ -277,7 +277,7 @@ export function MinpakuReportClient({
   <table>
     <thead><tr>
       <th>届出住宅（施設）</th><th>宿泊日数<br>(実稼働日)</th><th>宿泊者数</th><th>延べ宿泊者数</th>
-      <th>うち日本人<br>(延べ)</th><th>うち外国人<br>(延べ)</th><th>国籍未登録<br>(延べ)</th>
+      <th>うち日本人<br>(延べ)</th><th>うち外国人<br>(延べ)</th><th>国籍不明<br>(延べ)</th>
     </tr></thead>
     <tbody>${rowsHtml || '<tr><td colspan="7" style="text-align:center;color:#9ca3af;padding:20px;">対象期間の宿泊実績がありません</td></tr>'}</tbody>
     <tfoot><tr>
@@ -293,12 +293,12 @@ export function MinpakuReportClient({
     <tbody>${['日本', ...foreignNats, UNKNOWN_BUCKET].map(nat => {
       const total = nat === UNKNOWN_BUCKET ? rows.reduce((t, r) => t + unknownOf(r), 0) : natTotal(nat)
       const cls = total === 0 ? ' class="zero"' : ''
-      return `<tr${cls}><td>${esc(nat === UNKNOWN_BUCKET ? '国籍未登録' : nat)}</td>${rows.map(r => `<td class="c">${r.byNat[nat] ?? 0}</td>`).join('')}<td class="c b">${total}</td></tr>`
+      return `<tr${cls}><td>${esc(nat)}</td>${rows.map(r => `<td class="c">${r.byNat[nat] ?? 0}</td>`).join('')}<td class="c b">${total}</td></tr>`
     }).join('')}</tbody>
   </table>
   <div class="note">
     ※ 宿泊日数＝届出住宅に人を宿泊させた実日数（同日に複数予約があっても1日）。宿泊者数＝実人数。延べ宿泊者数＝人数×泊数（人泊）。<br>
-    ※ 国籍別内訳は電子宿泊者名簿（事前登録）＞OTAのゲスト国情報＞電話番号・言語からの推定 の順に判定しています。「国籍未登録」はいずれからも判定できなかった予約分です。提出前にご確認ください。<br>
+    ※ 国籍別内訳は電子宿泊者名簿（事前登録）＞OTAのゲスト国情報＞電話番号・言語からの推定 の順に判定しています。「国籍不明」はいずれからも判定できなかった予約分です。提出前にご確認ください。<br>
     ※ キャンセル予約は除外。泊数は対象期間内に含まれる夜のみを計上しています。
   </div>
   <script>window.onload=function(){window.print()}</script>
@@ -394,7 +394,7 @@ export function MinpakuReportClient({
                   <th className="text-center font-semibold px-3 py-3">延べ宿泊者数</th>
                   <th className="text-center font-semibold px-3 py-3">うち日本人</th>
                   <th className="text-center font-semibold px-3 py-3">うち外国人</th>
-                  <th className="text-center font-semibold px-3 py-3 text-amber-600">国籍未登録</th>
+                  <th className="text-center font-semibold px-3 py-3 text-amber-600">国籍不明</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -514,7 +514,7 @@ export function MinpakuReportClient({
       )}
 
       <p className="text-xs text-gray-400 leading-relaxed">
-        ※ 集計は予約データ（キャンセル除く）に基づきます。国籍別内訳は「電子宿泊者名簿（事前登録）」＞「OTA（Beds24）のゲスト国情報」＞「電話番号・言語からの推定」の順に判定し、いずれも無い場合に「国籍未登録」へ集計します。Airbnb経由の予約はOTAから国情報が届かないため、推定を使わないと国籍未登録になります。
+        ※ 集計は予約データ（キャンセル除く）に基づきます。国籍別内訳は「電子宿泊者名簿（事前登録）」＞「OTA（Beds24）のゲスト国情報」＞「電話番号・言語からの推定」の順に判定し、いずれも無い場合に「国籍不明」へ集計します。Airbnb経由の予約はOTAから国情報が届かないため、推定を使わないと国籍不明になります。
         提出前に内容をご確認のうえ、民泊制度運営システムへ入力・アップロードしてください。
       </p>
 

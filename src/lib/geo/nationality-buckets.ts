@@ -7,7 +7,7 @@
 import { isCountryCode } from '@/lib/geo/iso-countries'
 
 export const OTHER_BUCKET = 'その他'
-export const UNKNOWN_BUCKET = '未登録'
+export const UNKNOWN_BUCKET = '国籍不明'
 
 type Bucket = {
   label: string
@@ -39,7 +39,7 @@ const BUCKETS: Bucket[] = [
   { label: 'オーストラリア', codes: ['AU'], aliases: ['オーストラリア', '豪州', 'australia', 'aus'] },
 ]
 
-/** 画面・CSV・PDFで使う列の並び（その他まで。未登録は別枠） */
+/** 画面・CSV・PDFで使う列の並び（その他まで。国籍不明は別枠） */
 export const NATIONALITY_BUCKETS: string[] = [...BUCKETS.map(b => b.label), OTHER_BUCKET]
 
 /** 比較用に記号・空白を落として小文字化する */
