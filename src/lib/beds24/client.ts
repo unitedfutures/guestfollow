@@ -129,9 +129,10 @@ export interface Beds24Booking {
   lastNight: string   // YYYY-MM-DD
   status: string
   channel: string     // 予約元OTA（Airbnb / Booking.com / Direct など）
-  price: number       // 予約総額 ＝ 売上
-  commission: number  // OTA手数料（Beds24が返す実額。無ければ0）
-  roomCharge: number  // 宿泊料のみ（清掃料等を除く。宿泊税の課税標準用）
+  price: number        // 宿泊料（Beds24のprice。追加請求を含まない）
+  commission: number   // OTA手数料（Beds24が返す実額。無ければ0）
+  roomCharge: number   // 宿泊料のみ（清掃料等を除く。宿泊税の課税標準用）
+  invoiceTotal: number // 請求合計（宿泊料＋人数追加・清掃料金等、割引も反映）＝ 売上
   guestCountry: string // ゲストの国コード（ISO alpha-2、大文字。例 JP / US）
   otaStatus: string   // 'confirmed' | 'cancelled'
 }
@@ -150,6 +151,24 @@ function roomChargeFromInvoiceItems(items: unknown, fallback: number): number {
   }
   // 課金明細が1件も無い場合は総額にフォールバック
   return charges > 0 ? charges : fallback
+}
+
+/**
+ * 請求合計（charge明細の合計）を算出する。
+ * Beds24の price は宿泊料のみで、人数追加・清掃料金・BBQ等の追加請求や
+ * 連泊割引（マイナス）が反映されないため、売上にはこちらを使う。
+ */
+function invoiceTotalFromItems(items: unknown, fallback: number): number {
+  if (!Array.isArray(items) || items.length === 0) return fallback
+  let total = 0
+  let found = false
+  for (const raw of items) {
+    const it = raw as Record<string, unknown>
+    if (String(it.type) !== 'charge') continue
+    found = true
+    total += Number(it.lineTotal ?? it.amount ?? 0) || 0
+  }
+  return found ? total : fallback
 }
 
 // ============================================================
@@ -248,6 +267,28 @@ export async function getProperties(apiKey: string): Promise<Beds24Property[]> {
 }
 
 /**
+ * ページ送りをたどって全件取得する。
+ * Beds24 v2 は1ページ100件までで、超えると pages.nextPageExists が true になる。
+ * 1ページ目だけを読むと予約を取りこぼすため、最後まで読む。
+ */
+async function fetchAllPages(
+  path: string,
+  params: Record<string, string>,
+  apiKey: string,
+  maxPages = 50,
+): Promise<Record<string, unknown>[]> {
+  const all: Record<string, unknown>[] = []
+  for (let page = 1; page <= maxPages; page++) {
+    const qs = new URLSearchParams({ ...params, page: String(page) })
+    const raw = await beds24Fetch(`${path}?${qs}`, apiKey)
+    all.push(...unwrapData(raw))
+    const pages = (raw as { pages?: { nextPageExists?: boolean } })?.pages
+    if (!pages?.nextPageExists) break
+  }
+  return all
+}
+
+/**
  * Beds24 v2: GET /bookings
  * クエリ: propertyId, arrivalFrom, arrivalTo
  * レスポンス: { success, data: [{ id, propertyId, roomId, status, arrival, departure,
@@ -269,12 +310,12 @@ export async function getBookings(
   // Beds24 v2 の /bookings は status を指定しないとキャンセル済みを返さない。
   // 取り込んだ後にキャンセルされた予約が二度と取得できず、売上に残り続けてしまうため、
   // 通常分とキャンセル分を別々に取得して結合する。
-  const [normalRaw, cancelledRaw] = await Promise.all([
-    beds24Fetch(`/bookings?${new URLSearchParams(base)}`, apiKey),
-    beds24Fetch(`/bookings?${new URLSearchParams({ ...base, status: 'cancelled' })}`, apiKey),
+  const [normal, cancelled] = await Promise.all([
+    fetchAllPages('/bookings', base, apiKey),
+    fetchAllPages('/bookings', { ...base, status: 'cancelled' }, apiKey),
   ])
 
-  const list = [...unwrapData(normalRaw), ...unwrapData(cancelledRaw)]
+  const list = [...normal, ...cancelled]
   return list
     // 'black'（ブロック＝実予約ではない）のみ除外
     .filter(b => String(b.status ?? '').toLowerCase() !== 'black')
@@ -296,6 +337,7 @@ export async function getBookings(
         price: Number(b.price ?? 0) || 0,
         commission: Number(b.commission ?? b.commissionAmount ?? 0) || 0,
         roomCharge: roomChargeFromInvoiceItems(b.invoiceItems, Number(b.price ?? 0) || 0),
+        invoiceTotal: invoiceTotalFromItems(b.invoiceItems, Number(b.price ?? 0) || 0),
         guestCountry: String(b.country2 ?? b.country ?? '').trim().toUpperCase(),
         otaStatus: status === 'cancelled' ? 'cancelled' : 'confirmed',
       }

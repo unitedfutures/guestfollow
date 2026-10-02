@@ -16,6 +16,7 @@ type Booking = {
   ota_channel: string | null
   ota_status: string | null
   price: number | null
+  invoice_total?: number | null
   commission: number | null
   facility_id: string
   facilities: { name: string } | null
@@ -25,9 +26,10 @@ type Facility = { id: string; name: string }
 
 
 // 売上 / 手数料 / 粗利益 を1予約から算出
-const salesOf = (b: Booking) => b.price ?? 0
+// 売上は請求合計（人数追加・清掃料金などを含む）。未取得の予約は宿泊料で代用する
+const salesOf = (b: Booking) => b.invoice_total ?? b.price ?? 0
 const feeOf = (b: Booking) => b.commission ?? 0
-const profitOf = (b: Booking) => (b.price ?? 0) - (b.commission ?? 0)
+const profitOf = (b: Booking) => salesOf(b) - (b.commission ?? 0)
 
 // デフォルト日付範囲：本日〜3ヶ月後（UTC基準だと深夜0〜9時に前日始まりになるためJSTで算出）
 const defaultFrom = jstDate()
@@ -482,7 +484,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                     {/* 売上 */}
                     <div className={`text-sm font-semibold lg:text-right ${cancelled ? 'text-gray-400 line-through' : 'text-gray-900'}`}>
                       <span className="lg:hidden text-xs text-gray-400 mr-1 font-normal">売上:</span>
-                      {b.price ? yen(salesOf(b)) : <span className="text-gray-300 font-normal">—</span>}
+                      {salesOf(b) ? yen(salesOf(b)) : <span className="text-gray-300 font-normal">—</span>}
                     </div>
 
                     {/* OTA手数料 */}
@@ -494,7 +496,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
                     {/* 粗利益 */}
                     <div className={`text-sm font-bold lg:text-right ${cancelled ? 'text-gray-400 line-through' : 'text-navy-700'}`}>
                       <span className="lg:hidden text-xs text-gray-400 mr-1 font-normal">粗利益:</span>
-                      {b.price ? yen(profitOf(b)) : <span className="text-gray-300 font-normal">—</span>}
+                      {salesOf(b) ? yen(profitOf(b)) : <span className="text-gray-300 font-normal">—</span>}
                     </div>
                   </div>
                 )

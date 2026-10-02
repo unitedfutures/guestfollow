@@ -77,7 +77,7 @@ export function ManagementDashboard({ facilities, past, future, currentMonth, ex
             <BarChart3 size={24} className="text-navy-600" /> 経営管理
           </h2>
           <p className="text-gray-400 text-sm mt-0.5">
-            実績12ヶ月（{past[0]?.month.replace('-', '/')}〜{currentMonth.replace('-', '/')}）と、今後6ヶ月のオンハンド（予約済み）
+            実績12ヶ月（{past[0]?.month.replace('-', '/')}〜{currentMonth.replace('-', '/')}）と、今後6ヶ月のオンハンド（予約済み）／チェックアウト日基準
           </p>
         </div>
         <div className="relative">
@@ -154,9 +154,11 @@ export function ManagementDashboard({ facilities, past, future, currentMonth, ex
       <div className="flex flex-wrap items-start gap-2 text-xs text-gray-400">
         <Info size={13} className="shrink-0 mt-0.5" />
         <p className="leading-relaxed">
-          月をまたぐ予約は泊数で按分しています。キャンセルは除外。稼働率は「1施設1室」として、稼働日数 ÷（施設数 × 日数）で計算しています。
+          <span className="font-medium text-gray-500">チェックアウト日</span>を基準に、予約1件をその月へまとめて計上しています（キャンセルは除外）。
+          売上は請求合計（宿泊料＋人数追加・清掃料金などの追加請求、割引を反映）です。
+          稼働率は「1施設1室」として、稼働日数 ÷（施設数 × 日数）で計算しています。
           {excludedFacilityCount > 0 && <>期間中に予約が無い施設{excludedFacilityCount}件は集計から除いています。</>}
-          金額はBeds24から取得した予約金額です（OTA手数料を含む）。
+          金額はOTA手数料を含みます。
           明細は<Link href="/dashboard/reports" className="text-navy-600 hover:underline">売上レポート</Link>、
           予約ごとの状況は<Link href="/dashboard/bookings" className="text-navy-600 hover:underline">予約一覧</Link>で確認できます。
         </p>

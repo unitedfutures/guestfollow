@@ -9,10 +9,15 @@ export type BookingRow = {
   checkin_date: string
   checkout_date: string
   num_guests: number | null
-  price: number | null
+  price: number | null           // 宿泊料（Beds24のprice）
+  invoice_total?: number | null  // 請求合計（追加請求を含む）。無ければ price を使う
   commission: number | null
   ota_status: string | null
 }
+
+/** 売上として扱う金額。請求合計があればそれを、無ければ宿泊料を使う */
+export const bookingRevenue = (b: BookingRow): number =>
+  Number(b.invoice_total ?? b.price ?? 0) || 0
 
 export type Kpi = {
   revenue: number      // 売上（泊単位で按分）
@@ -61,9 +66,9 @@ const addKpi = (target: Kpi, add: Partial<Kpi>) => {
 }
 
 /**
- * 予約を月×施設で集計する。
- * - 売上・手数料・人泊は1泊あたりに割ってから、その泊が属する月へ加算する
- * - 宿泊客数・予約件数はチェックイン月に計上する（重複して数えないため）
+ * 予約を月×施設で集計する（チェックアウト日基準）。
+ * - 1件の予約は、チェックアウト日が属する月にまとめて計上する
+ *   （Beds24の集計や売上レポートと基準をそろえるため）
  * - 稼働率の分母は「施設数 × その月の日数」（1施設1室として扱う）
  */
 export function aggregateByMonth(
@@ -89,33 +94,28 @@ export function aggregateByMonth(
     if (b.ota_status === 'cancelled') continue
     if (!facilitySet.has(b.facility_id)) continue
 
+    // チェックアウト月に計上する。対象期間外なら無視
+    const month = (b.checkout_date ?? '').slice(0, 7)
+    const target = index.get(month)
+    if (!target) continue
+
     const start = Date.parse(`${b.checkin_date}T00:00:00Z`)
     const end = Date.parse(`${b.checkout_date}T00:00:00Z`)
     if (!Number.isFinite(start) || !Number.isFinite(end)) continue
     // 日帰り・同日チェックアウトも1泊として扱う
     const nights = Math.max(1, Math.round((end - start) / 86_400_000))
-
-    const price = Number(b.price) || 0
-    const commission = Number(b.commission) || 0
     const guests = Math.max(1, Number(b.num_guests) || 1)
-    const perNight = { revenue: price / nights, commission: commission / nights, roomNights: 1, guestNights: guests }
 
-    for (let i = 0; i < nights; i++) {
-      const night = new Date(start + i * 86_400_000)
-      const month = `${night.getUTCFullYear()}-${pad(night.getUTCMonth() + 1)}`
-      const target = index.get(month)
-      if (!target) continue
-      addKpi(target, perNight)
-      addKpi(target.byFacility[b.facility_id], perNight)
+    const add = {
+      revenue: bookingRevenue(b),
+      commission: Number(b.commission) || 0,
+      roomNights: nights,
+      guestNights: guests * nights,
+      guests,
+      bookings: 1,
     }
-
-    // 客数・件数はチェックイン月にだけ計上する
-    const checkinMonth = b.checkin_date.slice(0, 7)
-    const target = index.get(checkinMonth)
-    if (target) {
-      addKpi(target, { guests, bookings: 1 })
-      addKpi(target.byFacility[b.facility_id], { guests, bookings: 1 })
-    }
+    addKpi(target, add)
+    addKpi(target.byFacility[b.facility_id], add)
   }
 
   return months.map(m => index.get(m)!)

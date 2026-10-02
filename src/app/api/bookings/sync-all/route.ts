@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { getBookings } from '@/lib/beds24/client'
+import { beds24SyncedFields, writeBooking } from '@/lib/beds24/sync-write'
 import { getAirhostBookings, pickAirhostChannel, pickAirhostPrice, pickAirhostOtaStatus } from '@/lib/airhost/client'
 
 // 全施設の予約をサイトコントローラーから一括同期する
@@ -61,31 +62,20 @@ export async function POST() {
             const { data: existing } = await supabase
               .from('bookings').select('id').eq('beds24_booking_id', b.bookId).maybeSingle()
             if (existing) {
-              const { error: updErr } = await supabase.from('bookings').update({
-                price: b.price, commission: b.commission, room_charge: b.roomCharge, guest_country: b.guestCountry || null, ota_status: b.otaStatus, ota_channel: b.channel || null,
-              }).eq('id', existing.id)
+              const { error: updErr } = await writeBooking(supabase, beds24SyncedFields(b), { id: existing.id })
               if (updErr) { errors.push(`${f.name}: 予約 ${b.bookId} の更新に失敗（${updErr.message}）`); continue }
               totalSkipped++
               continue
             }
 
-            const { error: insErr } = await supabase.from('bookings').insert({
+            const { error: insErr } = await writeBooking(supabase, {
               facility_id: f.id,
               user_id: user.id,
               beds24_booking_id: b.bookId,
               ota_source: 'beds24',
-              ota_channel: b.channel || null,
               guest_email: b.guestEmail,
-              guest_name: `${b.guestLastName} ${b.guestFirstName}`.trim(),
-              checkin_date: b.firstNight,
-              checkout_date: b.lastNight,
-              num_guests: ((b.numAdult || 0) + (b.numChild || 0)) || 1,
               status: 'pending',
-              price: b.price,
-              commission: b.commission,
-              room_charge: b.roomCharge,
-              guest_country: b.guestCountry || null,
-              ota_status: b.otaStatus,
+              ...beds24SyncedFields(b),
             })
             // 失敗（一意制約違反など）は成功件数に数えない
             if (insErr) { errors.push(`${f.name}: 予約 ${b.bookId} の登録に失敗（${insErr.message}）`); continue }

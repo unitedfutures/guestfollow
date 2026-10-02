@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { getBookings } from '@/lib/beds24/client'
+import { beds24SyncedFields, writeBooking } from '@/lib/beds24/sync-write'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -70,40 +71,21 @@ export async function POST(request: Request) {
       .eq('beds24_booking_id', b.bookId)
       .maybeSingle()
 
-    // 既存予約は金額・OTAステータス・チャネルを更新（キャンセル反映）
+    // 既存予約は日程・人数・金額・OTAステータスを更新（キャンセルや日程変更の反映）
     if (existing) {
-      await supabase.from('bookings').update({
-        price:       b.price,
-        commission:  b.commission,
-        room_charge: b.roomCharge,
-        guest_country: b.guestCountry || null,
-        ota_status:  b.otaStatus,
-        ota_channel: b.channel || null,
-      }).eq('id', existing.id)
+      await writeBooking(supabase, beds24SyncedFields(b), { id: existing.id })
       skipped++
       continue
     }
 
-    const guestName = `${b.guestLastName} ${b.guestFirstName}`.trim()
-    const numGuests = (b.numAdult || 0) + (b.numChild || 0)
-
-    const { error: insErr } = await supabase.from('bookings').insert({
+    const { error: insErr } = await writeBooking(supabase, {
       facility_id,
       user_id:           user.id,
       beds24_booking_id: b.bookId,
       ota_source:        'beds24',
-      ota_channel:       b.channel || null,
       guest_email:       b.guestEmail,
-      guest_name:        guestName,
-      checkin_date:      b.firstNight,
-      checkout_date:     b.lastNight,
-      num_guests:        numGuests || 1,
       status:            'pending',
-      price:             b.price,
-      commission:        b.commission,
-      room_charge:       b.roomCharge,
-      guest_country:     b.guestCountry || null,
-      ota_status:        b.otaStatus,
+      ...beds24SyncedFields(b),
     })
     // 失敗（一意制約違反など）は成功件数に数えない
     if (insErr) { console.error('[beds24/sync] insert error:', b.bookId, insErr.message); continue }
