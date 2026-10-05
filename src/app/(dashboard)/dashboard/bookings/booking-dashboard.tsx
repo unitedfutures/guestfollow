@@ -9,6 +9,7 @@ import {
   ArrowUpDown, Fingerprint, Search, RefreshCw, Copy, Send, Globe,
   ChevronRight, Sparkles,
 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { formatDate, formatDateTime } from '@/lib/utils'
 import { BookingForm } from './booking-form'
 import { CsvDownloadButton } from './csv-download-button'
@@ -371,6 +372,8 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
+  // 入力中（searchInput）と、検索ボタン・Enterで確定した語（searchText）を分ける
+  const [searchInput, setSearchInput] = useState('')
   const [searchText, setSearchText] = useState('')
   const [sortAsc, setSortAsc] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -449,16 +452,19 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
       list = list.filter(b => !b.surveyed)
     }
 
-    // テキスト検索（ゲスト名・メール・登録名）
-    const q = searchText.trim().toLowerCase()
-    if (q) {
+    // テキスト検索（空白区切りで入力した語をすべて含むものに絞る）
+    const terms = searchText.trim().toLowerCase().split(/[\s　]+/).filter(Boolean)
+    if (terms.length > 0) {
       list = list.filter(b => {
         const record = getGuestRecords(b)[0]
-        return (
-          (b.guest_name ?? '').toLowerCase().includes(q) ||
-          (b.guest_email ?? '').toLowerCase().includes(q) ||
-          (record?.full_name ?? '').toLowerCase().includes(q)
-        )
+        // 検索対象：ゲスト名・メール・名簿の氏名/メール/電話/住所・施設名・予約元・日付
+        const haystack = [
+          b.guest_name, b.guest_email,
+          record?.full_name, record?.email, record?.phone, record?.address,
+          b.facilities?.name, b.ota_channel, b.ota_source,
+          b.checkin_date, b.checkout_date,
+        ].filter(Boolean).join(' ').toLowerCase()
+        return terms.every(t => haystack.includes(t))
       })
     }
 
@@ -513,14 +519,68 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
           <h2 className="text-2xl font-bold text-gray-900">{cleanerMode ? '清掃予定' : '予約一覧'}</h2>
           <p className="text-gray-400 text-sm mt-0.5">全 {activeBookings.length} 件（キャンセルを除く）</p>
         </div>
-        {!cleanerMode && (
-          <div className="flex items-center gap-2">
-            <CsvDownloadButton />
-            <BookingForm facilities={facilities} />
-            <SyncAllButton />
-          </div>
-        )}
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* 検索（Enterまたは検索ボタンで実行） */}
+          <form
+            onSubmit={e => { e.preventDefault(); setSearchText(searchInput) }}
+            className="flex items-center gap-1.5"
+            role="search"
+          >
+            <div className="relative">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
+              <input
+                type="search"
+                value={searchInput}
+                onChange={e => {
+                  setSearchInput(e.target.value)
+                  // 入力を消したら検索結果も戻す
+                  if (e.target.value === '') setSearchText('')
+                }}
+                placeholder="ゲスト名・メール・電話・施設名で検索"
+                aria-label="予約を検索"
+                className="w-56 sm:w-72 text-sm text-gray-700 bg-white border border-gray-200 rounded-lg pl-8 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-navy-300"
+              />
+              {searchInput && (
+                <button
+                  type="button"
+                  onClick={() => { setSearchInput(''); setSearchText('') }}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  aria-label="検索語をクリア"
+                >
+                  <XCircle size={14} />
+                </button>
+              )}
+            </div>
+            <Button type="submit" variant="outline" className="!py-2 text-sm">
+              <Search size={14} /> 検索
+            </Button>
+          </form>
+          {!cleanerMode && (
+            <>
+              <CsvDownloadButton />
+              <BookingForm facilities={facilities} />
+              <SyncAllButton />
+            </>
+          )}
+        </div>
       </div>
+
+      {/* 検索中の表示 */}
+      {searchText && (
+        <div className="flex items-center gap-2 text-sm text-navy-800 bg-navy-50 border border-navy-200 rounded-lg px-3 py-2">
+          <Search size={14} className="shrink-0 text-navy-500" />
+          <span>
+            「<span className="font-semibold">{searchText}</span>」の検索結果：{filtered.length} 件
+            <span className="text-navy-500 text-xs ml-1.5">（他の絞り込み条件も適用されています）</span>
+          </span>
+          <button
+            onClick={() => { setSearchInput(''); setSearchText('') }}
+            className="ml-auto text-xs text-navy-600 hover:underline shrink-0"
+          >
+            検索を解除
+          </button>
+        </div>
+      )}
 
       {/* ── サマリーカード ───────────────────────────────────────────────── */}
       {!cleanerMode && (
@@ -623,19 +683,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
         </div>
         )}
 
-        {/* ゲスト名検索 */}
-        <div className="relative flex-1 min-w-[160px]">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
-          <input
-            type="text"
-            value={searchText}
-            onChange={e => setSearchText(e.target.value)}
-            placeholder="ゲスト名・メールで検索"
-            className="w-full text-sm text-gray-700 bg-gray-50 border border-gray-200 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-navy-300"
-          />
-        </div>
-
-        <span className="text-xs text-gray-400">{filtered.length} 件表示</span>
+        <span className="text-xs text-gray-400 ml-auto">{filtered.length} 件表示</span>
       </div>
 
       {cleaningError && (
