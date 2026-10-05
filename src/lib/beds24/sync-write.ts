@@ -18,6 +18,9 @@ export function beds24SyncedFields(b: Beds24Booking) {
     invoice_total: b.invoiceTotal,
     guest_country: b.guestCountry || null,
     guest_country_guess: b.guestCountryGuess || null,
+    guest_phone: b.guestPhone || null,
+    ota_comments: b.comments || null,
+    ota_notes: b.notes || null,
     ota_status: b.otaStatus,
     ota_channel: b.channel || null,
   }
@@ -26,7 +29,9 @@ export function beds24SyncedFields(b: Beds24Booking) {
 type Payload = Record<string, unknown>
 
 // 後から追加した列（SQLを実行していない環境では存在しないことがある）
-const OPTIONAL_COLUMNS = ['invoice_total', 'guest_country_guess'] as const
+const OPTIONAL_COLUMNS = [
+  'invoice_total', 'guest_country_guess', 'guest_phone', 'ota_comments', 'ota_notes',
+] as const
 
 /** その列がまだ存在しないことによるエラーか */
 export function isMissingColumn(error: { code?: string; message?: string } | null, column: string): boolean {

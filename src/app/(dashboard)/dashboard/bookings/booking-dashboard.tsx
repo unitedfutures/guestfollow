@@ -8,9 +8,9 @@ import {
   ClipboardList, Filter, ChevronDown, Building2, MessageSquare,
   ArrowUpDown, Fingerprint, Search, RefreshCw, Copy, Send, Globe,
   ChevronRight, Sparkles,
-} from 'lucide-react'
+ StickyNote,} from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { formatDate, formatDateTime } from '@/lib/utils'
+import { formatDate, formatDateTime, formatYen } from '@/lib/utils'
 import { BookingForm } from './booking-form'
 import { CsvDownloadButton } from './csv-download-button'
 import { OtaChannelBadge } from '@/components/dashboard/channel-badge'
@@ -45,6 +45,12 @@ type Booking = {
   created_at: string
   facility_id: string
   pre_checkin_token: string
+  beds24_booking_id?: string | null
+  price?: number | null
+  invoice_total?: number | null
+  guest_phone?: string | null
+  ota_comments?: string | null
+  ota_notes?: string | null
   facilities: { id: string; name: string } | null
   guest_records: GuestRecord[] | GuestRecord | null
 }
@@ -238,8 +244,83 @@ function BookingDetail({ booking, appUrl }: { booking: Booking & { hasRecord: bo
     }
   }
 
+  // 連絡先は宿泊者名簿を優先し、無ければOTAから届いた値を使う
+  const email = record?.email || booking.guest_email || ''
+  const phone = record?.phone || booking.guest_phone || ''
+  const nights = Math.max(1, Math.round(
+    (Date.parse(`${booking.checkout_date}T00:00:00Z`) - Date.parse(`${booking.checkin_date}T00:00:00Z`)) / 86_400_000
+  ))
+  const amount = booking.invoice_total ?? booking.price ?? null
+
   return (
     <div className="px-5 pb-4 pt-1 bg-gray-50/70 border-t border-gray-100">
+
+      {/* ── 予約の基本情報・連絡先 ── */}
+      <div className="bg-white border border-gray-200 rounded-lg p-3 mb-4">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mb-2">
+          <span className="text-sm font-semibold text-gray-900">
+            {record?.full_name || booking.guest_name || <span className="text-gray-300">名前未取得</span>}
+          </span>
+          {record?.full_name && booking.guest_name && record.full_name !== booking.guest_name && (
+            <span className="text-xs text-gray-400">予約名：{booking.guest_name}</span>
+          )}
+          <span className="text-xs text-gray-500">{booking.num_guests}名 / {nights}泊</span>
+          {booking.ota_channel && <OtaChannelBadge channel={booking.ota_channel} source={booking.ota_source} />}
+          {booking.ota_status === 'cancelled' && (
+            <span className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">キャンセル</span>
+          )}
+        </div>
+
+        <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-xs">
+          <div className="flex gap-2">
+            <dt className="text-gray-400 w-16 shrink-0">メール</dt>
+            <dd className="text-gray-700 break-all">
+              {email ? <a href={`mailto:${email}`} className="hover:underline text-navy-700">{email}</a> : <span className="text-gray-300">—</span>}
+            </dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="text-gray-400 w-16 shrink-0">電話</dt>
+            <dd className="text-gray-700">
+              {phone ? <a href={`tel:${phone.replace(/[^\d+]/g, '')}`} className="hover:underline text-navy-700">{phone}</a> : <span className="text-gray-300">—</span>}
+            </dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="text-gray-400 w-16 shrink-0">住所</dt>
+            <dd className="text-gray-700 break-all">{record?.address || <span className="text-gray-300">—</span>}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="text-gray-400 w-16 shrink-0">宿泊</dt>
+            <dd className="text-gray-700">{formatDate(booking.checkin_date)} 〜 {formatDate(booking.checkout_date)}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="text-gray-400 w-16 shrink-0">金額</dt>
+            <dd className="text-gray-700">{amount != null ? formatYen(Math.round(amount)) : <span className="text-gray-300">—</span>}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="text-gray-400 w-16 shrink-0">予約番号</dt>
+            <dd className="text-gray-700 font-mono">{booking.beds24_booking_id || <span className="text-gray-300 font-sans">—</span>}</dd>
+          </div>
+        </dl>
+
+        {/* ノート（Beds24のメモ）とOTAからのコメント */}
+        {(booking.ota_notes || booking.ota_comments) && (
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-2">
+            {booking.ota_notes && (
+              <div>
+                <p className="text-[11px] font-semibold text-gray-500 mb-1 flex items-center gap-1"><StickyNote size={11} /> ノート（Beds24のメモ）</p>
+                <p className="text-xs text-gray-700 whitespace-pre-wrap bg-amber-50/60 border border-amber-100 rounded-lg px-3 py-2">{booking.ota_notes}</p>
+              </div>
+            )}
+            {booking.ota_comments && (
+              <div>
+                <p className="text-[11px] font-semibold text-gray-500 mb-1 flex items-center gap-1"><MessageSquare size={11} /> OTAからのコメント</p>
+                <p className="text-xs text-gray-600 whitespace-pre-wrap bg-gray-50 border border-gray-100 rounded-lg px-3 py-2 max-h-40 overflow-y-auto">{booking.ota_comments}</p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
 
         {/* ── 左：事前登録URL＋アクション ── */}

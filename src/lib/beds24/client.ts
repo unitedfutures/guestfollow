@@ -137,6 +137,9 @@ export interface Beds24Booking {
   invoiceTotal: number // 請求合計（宿泊料＋人数追加・清掃料金等、割引も反映）＝ 売上
   guestCountry: string      // ゲストの国コード（ISO alpha-2、大文字。例 JP / US）
   guestCountryGuess: string // 電話番号・言語からの推定国コード（確定ではない）
+  guestPhone: string        // ゲストの電話番号（phone / mobile）
+  comments: string          // OTAから届いた予約コメント
+  notes: string             // Beds24に入力した自社メモ
   otaStatus: string   // 'confirmed' | 'cancelled'
 }
 
@@ -344,6 +347,9 @@ export async function getBookings(
         // country には言語コードが入ることがある（Airbnbは country2 が空で country="ja"）。
         // 実在する国コードだけを採用し、そうでなければ未取得として扱う
         guestCountry: pickCountryCode(b.country2 as string, b.country as string),
+        guestPhone: String(b.phone ?? '').trim() || String(b.mobile ?? '').trim(),
+        comments: String(b.comments ?? '').trim(),
+        notes: String(b.notes ?? '').trim(),
         // 国情報が無い予約（Airbnb経由など）向けに、電話番号と言語から推定した国
         guestCountryGuess: guessCountryCode(
           (b.phone ?? b.mobile) as string,
