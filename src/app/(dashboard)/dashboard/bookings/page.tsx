@@ -10,7 +10,6 @@ export default async function DashboardPage() {
   const [
     rawBookings,
     { data: facilities },
-    { data: surveyResponses },
     { data: cleaningStaff },
   ] = await Promise.all([
     selectBookingsWithOptional<Record<string, unknown>>(
@@ -31,9 +30,6 @@ export default async function DashboardPage() {
       .select('id, name')
       .order('name'),
     supabase
-      .from('survey_responses')
-      .select('id, facility_id, stay_checkin'),
-    supabase
       .from('cleaning_staff')
       .select('id, name')
       .eq('active', true)
@@ -49,7 +45,6 @@ export default async function DashboardPage() {
     <BookingDashboard
       bookings={bookings}
       facilities={facilities ?? []}
-      surveyResponses={surveyResponses ?? []}
       cleaningStaff={cleaningStaff ?? []}
       appUrl={appUrl}
       cleanerMode={isCleanerOnly}

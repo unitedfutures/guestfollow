@@ -56,13 +56,11 @@ type Booking = {
 }
 
 type Facility = { id: string; name: string }
-type SurveyResponse = { id: string; facility_id: string; stay_checkin: string | null }
 type CleaningStaff = { id: string; name: string }
 
 interface Props {
   bookings: Booking[]
   facilities: Facility[]
-  surveyResponses: SurveyResponse[]
   cleaningStaff: CleaningStaff[]
   appUrl: string
   cleanerMode?: boolean
@@ -73,12 +71,6 @@ interface Props {
 function getGuestRecords(b: Booking): GuestRecord[] {
   if (!b.guest_records) return []
   return Array.isArray(b.guest_records) ? b.guest_records : [b.guest_records]
-}
-
-function hasSurvey(b: Booking, surveys: SurveyResponse[]): boolean {
-  return surveys.some(
-    s => s.facility_id === b.facility_id && s.stay_checkin === b.checkin_date
-  )
 }
 
 function isUpcoming(date: string) {
@@ -444,10 +436,10 @@ function BookingDetail({ booking, appUrl }: { booking: Booking & { hasRecord: bo
 
 // ─── メインコンポーネント ────────────────────────────────────────────────────
 
-export function BookingDashboard({ bookings, facilities, surveyResponses, cleaningStaff, appUrl, cleanerMode = false }: Props) {
+export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, cleanerMode = false }: Props) {
   const gridCols = cleanerMode
     ? 'lg:grid-cols-[2fr_1.5fr_1.4fr_1fr]'
-    : 'lg:grid-cols-[16px_2fr_1.5fr_1.2fr_1fr_0.9fr_0.9fr_0.9fr]'
+    : 'lg:grid-cols-[16px_2fr_1.5fr_1.2fr_1fr_0.9fr_0.9fr]'
   const [facilityFilter, setFacilityFilter] = useState<string>('all')
   const [periodFilter, setPeriodFilter] = useState<string>('upcoming')
   const [dateFrom, setDateFrom] = useState<string>('')
@@ -504,8 +496,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
         const records = getGuestRecords(b)
         const hasRecord = records.length > 0
         const checkedIn = records.some(r => r.checkin_completed_at)
-        const surveyed = hasSurvey(b, surveyResponses)
-        return { ...b, hasRecord, checkedIn, surveyed }
+        return { ...b, hasRecord, checkedIn }
       })
 
     // 施設フィルター
@@ -529,8 +520,6 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
       list = list.filter(b => !b.hasRecord)
     } else if (statusFilter === 'no_checkin') {
       list = list.filter(b => b.hasRecord && !b.checkedIn)
-    } else if (statusFilter === 'no_survey') {
-      list = list.filter(b => !b.surveyed)
     }
 
     // テキスト検索（空白区切りで入力した語をすべて含むものに絞る）
@@ -557,7 +546,7 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
     })
 
     return list
-  }, [activeBookings, facilityFilter, periodFilter, dateFrom, dateTo, statusFilter, searchText, sortAsc, surveyResponses])
+  }, [activeBookings, facilityFilter, periodFilter, dateFrom, dateTo, statusFilter, searchText, sortAsc])
 
   // ── サマリー数値（キャンセルを除いた予約が対象） ──────────────────────────
   const todayArrivals = activeBookings.filter(b => isToday(b.checkin_date)).length
@@ -758,7 +747,6 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
             <option value="all">すべてのステータス</option>
             <option value="no_record">名簿未登録</option>
             <option value="no_checkin">チェックイン未</option>
-            <option value="no_survey">アンケート未</option>
           </select>
           <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
@@ -788,7 +776,6 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
             <div>ゲスト</div>
             {!cleanerMode && <div className="text-center">名簿</div>}
             {!cleanerMode && <div className="text-center">チェックイン</div>}
-            {!cleanerMode && <div className="text-center">アンケート</div>}
           </div>
 
           {/* 行 */}
@@ -888,19 +875,6 @@ export function BookingDashboard({ bookings, facilities, surveyResponses, cleani
                         ) : (
                           <StatusBadge ok={false} label="チェックイン" pending />
                         )}
-                      </div>
-                      {/* アンケート */}
-                      <div className="flex lg:justify-center">
-                        <span className={`inline-flex items-center gap-1 text-xs font-medium rounded-full px-2 py-0.5 whitespace-nowrap ${
-                          b.surveyed
-                            ? 'text-green-700 bg-green-50 border border-green-200'
-                            : 'text-gray-400 bg-gray-50 border border-gray-200'
-                        }`}>
-                          {b.surveyed
-                            ? <><CheckCircle2 size={10} /> アンケート回答済</>
-                            : <><MessageSquare size={10} /> アンケート未回答</>
-                          }
-                        </span>
                       </div>
                     </div>
                     )}
