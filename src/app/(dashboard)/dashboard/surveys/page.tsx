@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { HIGHLIGHT_LABELS_JA, isHighlightKey } from '@/lib/survey/highlights'
 import { redirect } from 'next/navigation'
 import { Card } from '@/components/ui/card'
 import { Star, MessageSquare, ClipboardList, Lightbulb } from 'lucide-react'
@@ -66,6 +67,10 @@ export default async function SurveysPage() {
               const answers = r.answers as Record<string, number | string>
               const ratingEntries = RATING_KEYS.filter(k => typeof answers[k] === 'number')
               const comment = answers['comment'] as string | undefined
+              // 良かった点（複数回答）。キーで保存されているので日本語ラベルに直す
+              const highlights = Array.isArray((r.answers as Record<string, unknown>)['highlights'])
+                ? ((r.answers as Record<string, unknown>)['highlights'] as unknown[]).filter(isHighlightKey)
+                : []
               // ☆4以下のときに別画面でヒアリングした改善要望（answers内に保存される）
               const improvement = answers['improvement'] as string | undefined
               const questions = customQuestionMap.get(r.facility_id) ?? new Map<string, CustomQuestion>()
@@ -111,6 +116,17 @@ export default async function SurveysPage() {
                             再利用: {answers['revisit'] === 'yes' ? 'はい' : 'いいえ'}
                           </span>
                         )}
+                      </div>
+                    )}
+
+                    {/* 良かった点 */}
+                    {highlights.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {highlights.map(k => (
+                          <span key={k} className="text-xs text-navy-700 bg-navy-50 border border-navy-100 rounded-full px-2 py-0.5">
+                            {HIGHLIGHT_LABELS_JA[k]}
+                          </span>
+                        ))}
                       </div>
                     )}
 

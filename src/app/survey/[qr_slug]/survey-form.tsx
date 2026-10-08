@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { CheckCircle, Star, ThumbsUp, ThumbsDown, Copy, ExternalLink } from 'lucide-react'
+import { CheckCircle, Star, ThumbsUp, ThumbsDown, Copy, ExternalLink, Sparkles, RefreshCw } from 'lucide-react'
 import { useGuestLang } from '@/lib/i18n/guest-lang'
+import { HIGHLIGHT_OPTIONS, type HighlightKey } from '@/lib/survey/highlights'
 
 // ─── 型定義 ───────────────────────────────────────────────────────────────
 
@@ -15,6 +16,7 @@ export type StandardConfig = {
   location:    boolean
   revisit:     boolean
   comment:     boolean
+  highlights?: boolean   // 良かった点（複数回答）。未設定の施設では表示する
 }
 
 export type CustomQuestion = {
@@ -103,7 +105,7 @@ interface Props {
 }
 
 export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
-  const { t } = useGuestLang()
+  const { t, lang } = useGuestLang()
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -118,6 +120,10 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
   // 回答の状態
   const [answers, setAnswers] = useState<Record<string, number | string>>({})
   const [comment, setComment] = useState('')
+  const [highlights, setHighlights] = useState<HighlightKey[]>([])
+  // ☆5のときに出すクチコミ下書き
+  const [draft, setDraft] = useState('')
+  const [draftLoading, setDraftLoading] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [stayCheckin, setStayCheckin] = useState('')
@@ -143,7 +149,7 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
         respondent_email: email || null,
         stay_checkin:     stayCheckin || null,
         stay_checkout:    stayCheckout || null,
-        answers:          { ...answers, comment: comment || null },
+        answers:          { ...answers, comment: comment || null, highlights },
       }),
     })
     const data = await res.json()
@@ -151,10 +157,38 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
     if (!res.ok) { setError(data.error || t('error_generic')); return }
     setResponseId(data.id ?? null)
     setSubmitted(true)
+    // ☆5の人にはクチコミの下書きを用意する
+    if (Number(answers['overall']) === 5) generateDraft()
+  }
+
+  const toggleHighlight = (key: HighlightKey) =>
+    setHighlights(list => (list.includes(key) ? list.filter(k => k !== key) : [...list, key]))
+
+  /** 回答をもとにクチコミ下書きを作る（AI。未設定時はサーバー側で定型文） */
+  const generateDraft = async () => {
+    setDraftLoading(true)
+    try {
+      const res = await fetch('/api/survey/review-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          qr_slug: qrSlug,
+          lang,
+          answers: { ...answers, comment: comment || null, highlights },
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.text) setDraft(data.text)
+      else if (comment) setDraft(comment)
+    } catch {
+      if (comment) setDraft(comment)
+    } finally {
+      setDraftLoading(false)
+    }
   }
 
   const handleCopy = async () => {
-    try { await navigator.clipboard.writeText(comment); setCopied(true); setTimeout(() => setCopied(false), 2500) } catch { /* noop */ }
+    try { await navigator.clipboard.writeText(draft); setCopied(true); setTimeout(() => setCopied(false), 4000) } catch { /* noop */ }
   }
 
   const handleImprovement = async () => {
@@ -174,39 +208,61 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
   if (submitted) {
     const overall = Number(answers['overall']) || 0
 
-    // ☆5：Googleレビュー案内＋感想コピー
+    // ☆5：AIでクチコミ下書きを作り、コピー→Googleクチコミへ
     if (overall === 5) {
       return (
-        <div className="bg-white rounded-2xl shadow-sm p-8 border border-gray-100 text-center">
-          <div className="flex justify-center gap-0.5 mb-3">
-            {[1, 2, 3, 4, 5].map(n => <Star key={n} size={24} className="fill-amber-400 text-amber-400" />)}
+        <div className="bg-white rounded-2xl shadow-sm p-6 sm:p-8 border border-gray-100">
+          <div className="text-center">
+            <div className="flex justify-center gap-0.5 mb-3">
+              {[1, 2, 3, 4, 5].map(n => <Star key={n} size={24} className="fill-amber-400 text-amber-400" />)}
+            </div>
+            <h3 className="text-lg font-bold text-gray-900 mb-2">{t('sv_g_title')}</h3>
+            <p className="text-gray-500 text-sm leading-relaxed mb-5">{t('sv_g_desc')}</p>
           </div>
-          <h3 className="text-lg font-bold text-gray-900 mb-2">{t('sv_g_title')}</h3>
-          <p className="text-gray-500 text-sm leading-relaxed mb-5">{t('sv_g_desc')}</p>
 
-          {/* 直前の感想を表示＋コピー */}
-          <div className="text-left bg-amber-50 border border-amber-200 rounded-xl p-4 mb-4">
-            <p className="text-xs font-semibold text-amber-700 mb-1.5">{t('sv_g_your_comment')}</p>
-            {comment ? (
-              <p className="text-sm text-gray-700 whitespace-pre-wrap leading-relaxed">{comment}</p>
-            ) : (
-              <p className="text-sm text-gray-400">{t('sv_g_no_comment')}</p>
-            )}
-            {comment && (
-              <button onClick={handleCopy}
-                className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-amber-800 bg-white border border-amber-300 rounded-lg px-3 py-1.5 hover:bg-amber-100 transition-colors">
-                {copied ? <><CheckCircle size={13} /> {t('sv_g_copied')}</> : <><Copy size={13} /> {t('sv_g_copy')}</>}
+          {/* クチコミ下書き（編集可能） */}
+          <div className="text-left bg-amber-50 border border-amber-200 rounded-xl p-4">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <p className="text-xs font-semibold text-amber-700 flex items-center gap-1">
+                <Sparkles size={12} /> {t('sv_g_draft_title')}
+              </p>
+              <button onClick={generateDraft} disabled={draftLoading}
+                className="text-[11px] text-amber-700 hover:text-amber-900 inline-flex items-center gap-1 disabled:opacity-50">
+                <RefreshCw size={11} className={draftLoading ? 'animate-spin' : ''} /> {t('sv_g_regenerate')}
               </button>
+            </div>
+
+            {draftLoading && !draft ? (
+              <p className="text-sm text-amber-700/70 py-6 text-center">{t('sv_g_generating')}</p>
+            ) : (
+              <textarea
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                rows={6}
+                aria-label={t('sv_g_draft_title')}
+                className="block w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-gray-700 leading-relaxed focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+              />
             )}
+            <p className="text-[11px] text-amber-700/80 mt-1.5">{t('sv_g_draft_note')}</p>
+
+            <button onClick={handleCopy} disabled={!draft}
+              className="mt-3 w-full inline-flex items-center justify-center gap-1.5 text-sm font-semibold text-amber-900 bg-white border border-amber-300 rounded-lg px-3 py-2.5 hover:bg-amber-100 transition-colors disabled:opacity-50">
+              {copied ? <><CheckCircle size={14} /> {t('sv_g_copied')}</> : <><Copy size={14} /> {t('sv_g_copy')}</>}
+            </button>
           </div>
 
-          {googleReviewUrl && (
-            <a href={googleReviewUrl} target="_blank" rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-2 bg-navy-500 text-white font-bold text-sm px-6 py-3.5 rounded-xl hover:bg-navy-600 transition-colors">
-              <ExternalLink size={16} /> {t('sv_g_write')}
-            </a>
+          {/* コピー後にGoogleクチコミへ */}
+          {googleReviewUrl ? (
+            <div className="mt-4">
+              <a href={googleReviewUrl} target="_blank" rel="noopener noreferrer"
+                className="w-full inline-flex items-center justify-center gap-2 bg-navy-500 text-white font-bold text-sm px-6 py-3.5 rounded-xl hover:bg-navy-600 transition-colors">
+                <ExternalLink size={16} /> {t('sv_g_write')}
+              </a>
+              <p className="text-gray-400 text-xs mt-2 text-center leading-relaxed">{t('sv_g_paste_hint')}</p>
+            </div>
+          ) : (
+            <p className="text-gray-400 text-xs mt-4 text-center">{t('sv_thanks_desc')}</p>
           )}
-          <p className="text-gray-400 text-xs mt-4">{t('sv_thanks_desc')}</p>
         </div>
       )
     }
@@ -322,6 +378,35 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
             )}
           </div>
         ))}
+
+        {/* 良かった点（複数回答） */}
+        {config.standard.highlights !== false && (
+          <div>
+            <p className="text-sm font-semibold text-gray-800 mb-1">{t('sv_highlights')}</p>
+            <p className="text-xs text-gray-400 mb-2">{t('sv_highlights_note')}</p>
+            <div className="flex flex-wrap gap-2">
+              {HIGHLIGHT_OPTIONS.map(key => {
+                const on = highlights.includes(key)
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleHighlight(key)}
+                    className={`text-sm rounded-full border px-3 py-1.5 transition-colors ${
+                      on
+                        ? 'bg-navy-500 text-white border-navy-500'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                    }`}
+                  >
+                    {on && <CheckCircle size={12} className="inline mr-1 -mt-0.5" />}
+                    {t(`sv_hl_${key}`)}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 自由コメント */}
         {config.standard.comment && (

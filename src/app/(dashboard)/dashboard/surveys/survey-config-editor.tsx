@@ -8,7 +8,7 @@ import { Save, CheckCircle, Plus, Trash2, ClipboardList, Link2, ExternalLink, Co
 import type { SurveyConfig, CustomQuestion } from '@/app/survey/[qr_slug]/survey-form'
 
 export const DEFAULT_SURVEY_CONFIG: SurveyConfig = {
-  standard: { overall: true, cleanliness: true, facilities: true, location: true, revisit: false, comment: true },
+  standard: { overall: true, cleanliness: true, facilities: true, location: true, revisit: true, comment: true, highlights: true },
   custom: [],
 }
 
@@ -18,6 +18,7 @@ const STANDARD_ITEMS: { key: keyof SurveyConfig['standard']; label: string }[] =
   { key: 'facilities',  label: '設備・アメニティ（★1〜5）' },
   { key: 'location',    label: '立地・アクセス（★1〜5）' },
   { key: 'revisit',     label: 'またご利用いただけますか？（はい/いいえ）' },
+  { key: 'highlights',  label: '良かった点（複数回答・チェックボックス）' },
   { key: 'comment',     label: 'ご意見・ご感想（自由記述）' },
 ]
 
