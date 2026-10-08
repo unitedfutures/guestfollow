@@ -40,8 +40,7 @@ function templateDraft(s: ReturnType<typeof summarize>): string {
 }
 
 /** Claude で自然なクチコミ文を作る。失敗時は null を返して定型文に任せる */
-async function aiDraft(s: ReturnType<typeof summarize>, lang: string): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
+async function aiDraft(s: ReturnType<typeof summarize>, lang: string, apiKey: string | null): Promise<string | null> {
   if (!apiKey) return null
 
   const prompt = [
@@ -104,13 +103,20 @@ export async function POST(request: Request) {
     }
 
     const { data: facility } = await supabase
-      .from('facilities').select('name').eq('qr_slug', qr_slug).single()
+      .from('facilities').select('name, user_id').eq('qr_slug', qr_slug).single()
     if (!facility) return NextResponse.json({ error: '施設が見つかりません' }, { status: 404 })
+
+    // APIキーは施設オーナーの設定を優先し、無ければ環境変数（キーはサーバー外へ出さない）
+    const { data: profile } = await supabase
+      .from('profiles').select('anthropic_api_key').eq('id', facility.user_id).maybeSingle()
+    const apiKey = (profile as { anthropic_api_key?: string | null } | null)?.anthropic_api_key?.trim()
+      || process.env.ANTHROPIC_API_KEY
+      || null
 
     const summary = summarize((answers ?? {}) as Answers, facility.name)
     const language = typeof lang === 'string' && /^[a-zA-Z-]{2,10}$/.test(lang) ? lang : 'ja'
 
-    const ai = await aiDraft(summary, language)
+    const ai = await aiDraft(summary, language, apiKey)
     return NextResponse.json({ text: ai ?? templateDraft(summary), generated: ai !== null })
   } catch (e) {
     console.error('[/api/survey/review-draft] error:', e)

@@ -7,6 +7,7 @@ import { formatDate } from '@/lib/utils'
 import Link from 'next/link'
 import { getAccountAccess } from '@/lib/auth/roles'
 import type { CustomQuestion } from '@/app/survey/[qr_slug]/survey-form'
+import { AiKeySection } from './ai-key-section'
 
 const RATING_KEYS = ['overall', 'cleanliness', 'facilities', 'location'] as const
 const RATING_LABELS: Record<string, string> = {
@@ -29,14 +30,18 @@ export default async function SurveysPage() {
 
   const supabase = await createClient()
 
-  const [{ data: responses }, { data: facilities }] = await Promise.all([
+  const { data: { user } } = await supabase.auth.getUser()
+  const [{ data: responses }, { data: facilities }, { data: profile }] = await Promise.all([
     supabase
       .from('survey_responses')
       .select('*, facilities(name)')
       .order('created_at', { ascending: false }),
     // 独自設問は survey_config に本文がある。回答のキー（q_xxxx）を設問文に戻すために取得する
     supabase.from('facilities').select('id, survey_config'),
+    // APIキーは値を取らず、設定済みかどうかだけを見る（列が無い環境では未設定として扱う）
+    supabase.from('profiles').select('anthropic_api_key').eq('id', user?.id ?? '').maybeSingle(),
   ])
+  const aiKeyConfigured = !!(profile as { anthropic_api_key?: string | null } | null)?.anthropic_api_key
 
   const customQuestionMap = new Map<string, Map<string, CustomQuestion>>()
   for (const f of facilities ?? []) {
@@ -52,6 +57,9 @@ export default async function SurveysPage() {
           回答一覧（URLと設問設定は<Link href="/dashboard/facilities" className="text-navy-500 hover:underline">施設管理</Link>から）
         </p>
       </div>
+
+      {/* ── AIクチコミ下書きの設定（アカウント共通） ── */}
+      <AiKeySection initialConfigured={aiKeyConfigured} />
 
       {/* ── 回答一覧 ── */}
       <div>
