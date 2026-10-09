@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { isMissingColumn } from '@/lib/beds24/sync-write'
 
 // 公開エンドポイント（認証不要）
 const supabase = createClient(
@@ -10,7 +11,7 @@ const supabase = createClient(
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { qr_slug, respondent_name, respondent_email, stay_checkin, stay_checkout, answers } = body
+    const { qr_slug, respondent_name, respondent_email, stay_checkin, stay_checkout, answers, booking_id } = body
 
     if (!qr_slug) return NextResponse.json({ error: 'qr_slug is required' }, { status: 400 })
 
@@ -42,8 +43,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: '施設が見つかりません' }, { status: 404 })
     }
 
+    // 個別URLからの回答は予約に紐づける（他施設の予約IDを渡されても紐づけない）
+    let bookingId: string | null = null
+    if (typeof booking_id === 'string' && /^[0-9a-f-]{36}$/i.test(booking_id)) {
+      const { data: booking } = await supabase
+        .from('bookings').select('id').eq('id', booking_id).eq('facility_id', facility.id).maybeSingle()
+      bookingId = booking?.id ?? null
+    }
+
     const { data: inserted, error } = await supabase.from('survey_responses').insert({
       facility_id:      facility.id,
+      ...(bookingId ? { booking_id: bookingId } : {}),
       user_id:          facility.user_id,
       respondent_name:  respondent_name ?? null,
       respondent_email: respondent_email ?? null,
@@ -52,7 +62,23 @@ export async function POST(request: Request) {
       answers:          answers ?? {},
     }).select('id').single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      // booking_id 列がまだ無い環境では、紐づけなしで保存する
+      if (isMissingColumn(error, 'booking_id')) {
+        const { data: retry, error: retryError } = await supabase.from('survey_responses').insert({
+          facility_id:      facility.id,
+          user_id:          facility.user_id,
+          respondent_name:  respondent_name ?? null,
+          respondent_email: respondent_email ?? null,
+          stay_checkin:     stay_checkin ?? null,
+          stay_checkout:    stay_checkout ?? null,
+          answers:          answers ?? {},
+        }).select('id').single()
+        if (retryError) return NextResponse.json({ error: retryError.message }, { status: 500 })
+        return NextResponse.json({ success: true, id: retry?.id })
+      }
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ success: true, id: inserted?.id })
   } catch (e) {
     console.error('[/api/survey] error:', e)

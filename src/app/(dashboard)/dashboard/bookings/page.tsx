@@ -2,10 +2,18 @@ import { createClient } from '@/lib/supabase/server'
 import { BookingDashboard } from './booking-dashboard'
 import { getAccountAccess } from '@/lib/auth/roles'
 import { selectBookingsWithOptional } from '@/lib/analytics/select-bookings'
+import { isMissingColumn } from '@/lib/beds24/sync-write'
 
 export default async function DashboardPage() {
   const { isCleanerOnly } = await getAccountAccess()
   const supabase = await createClient()
+
+  // 個別URL（/survey/b/[BOOKID]）から回答されたアンケートは予約に紐づく
+  const { data: surveyLinks, error: surveyLinkError } = await supabase
+    .from('survey_responses').select('booking_id, created_at').not('booking_id', 'is', null)
+  const answeredBookingIds = isMissingColumn(surveyLinkError, 'booking_id')
+    ? []
+    : (surveyLinks ?? []).map(s => s.booking_id as string)
 
   const [
     rawBookings,
@@ -47,6 +55,7 @@ export default async function DashboardPage() {
       facilities={facilities ?? []}
       cleaningStaff={cleaningStaff ?? []}
       appUrl={appUrl}
+      answeredBookingIds={answeredBookingIds}
       cleanerMode={isCleanerOnly}
     />
   )

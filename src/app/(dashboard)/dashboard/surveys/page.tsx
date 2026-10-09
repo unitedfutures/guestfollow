@@ -31,11 +31,21 @@ export default async function SurveysPage() {
   const supabase = await createClient()
 
   const { data: { user } } = await supabase.auth.getUser()
-  const [{ data: responses }, { data: facilities }, { data: profile }] = await Promise.all([
-    supabase
+  // booking_id 列が未作成の環境では、予約との結合を外して取得する
+  const fetchResponses = async () => {
+    const withBooking = await supabase
+      .from('survey_responses')
+      .select('*, facilities(name), bookings(id, guest_name, checkin_date, checkout_date)')
+      .order('created_at', { ascending: false })
+    if (!withBooking.error) return withBooking
+    return supabase
       .from('survey_responses')
       .select('*, facilities(name)')
-      .order('created_at', { ascending: false }),
+      .order('created_at', { ascending: false })
+  }
+
+  const [{ data: responses }, { data: facilities }, { data: profile }] = await Promise.all([
+    fetchResponses(),
     // 独自設問は survey_config に本文がある。回答のキー（q_xxxx）を設問文に戻すために取得する
     supabase.from('facilities').select('id, survey_config'),
     // APIキーは値を取らず、設定済みかどうかだけを見る（列が無い環境では未設定として扱う）
@@ -98,6 +108,11 @@ export default async function SurveysPage() {
                           {r.stay_checkin && ` ／ 滞在: ${formatDate(r.stay_checkin)}〜${r.stay_checkout ? formatDate(r.stay_checkout) : ''}`}
                         </p>
                       </div>
+                      {(r as { bookings?: { guest_name: string | null } | null }).bookings && (
+                        <span className="text-[11px] text-navy-700 bg-navy-50 border border-navy-100 rounded-full px-2 py-0.5 shrink-0">
+                          予約と紐づけ済：{(r as { bookings?: { guest_name: string | null } | null }).bookings?.guest_name ?? '（名前なし）'}
+                        </span>
+                      )}
                       {typeof answers['overall'] === 'number' && (
                         <div className="flex items-center gap-1.5 shrink-0">
                           <Stars value={answers['overall'] as number} />

@@ -62,6 +62,8 @@ interface Props {
   bookings: Booking[]
   facilities: Facility[]
   cleaningStaff: CleaningStaff[]
+  /** アンケートに回答済みの予約ID（個別URLからの回答のみ分かる） */
+  answeredBookingIds?: string[]
   appUrl: string
   cleanerMode?: boolean
 }
@@ -436,10 +438,11 @@ function BookingDetail({ booking, appUrl }: { booking: Booking & { hasRecord: bo
 
 // ─── メインコンポーネント ────────────────────────────────────────────────────
 
-export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, cleanerMode = false }: Props) {
+export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, answeredBookingIds = [], cleanerMode = false }: Props) {
+  const answeredSet = useMemo(() => new Set(answeredBookingIds), [answeredBookingIds])
   const gridCols = cleanerMode
     ? 'lg:grid-cols-[2fr_1.5fr_1.4fr_1fr]'
-    : 'lg:grid-cols-[16px_2fr_1.5fr_1.2fr_1fr_0.9fr_0.9fr]'
+    : 'lg:grid-cols-[16px_2fr_1.5fr_1.2fr_1fr_0.9fr_0.9fr_0.9fr]'
   const [facilityFilter, setFacilityFilter] = useState<string>('all')
   const [periodFilter, setPeriodFilter] = useState<string>('upcoming')
   const [dateFrom, setDateFrom] = useState<string>('')
@@ -496,7 +499,7 @@ export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, 
         const records = getGuestRecords(b)
         const hasRecord = records.length > 0
         const checkedIn = records.some(r => r.checkin_completed_at)
-        return { ...b, hasRecord, checkedIn }
+        return { ...b, hasRecord, checkedIn, surveyed: answeredSet.has(b.id) }
       })
 
     // 施設フィルター
@@ -520,6 +523,8 @@ export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, 
       list = list.filter(b => !b.hasRecord)
     } else if (statusFilter === 'no_checkin') {
       list = list.filter(b => b.hasRecord && !b.checkedIn)
+    } else if (statusFilter === 'no_survey') {
+      list = list.filter(b => !b.surveyed)
     }
 
     // テキスト検索（空白区切りで入力した語をすべて含むものに絞る）
@@ -546,7 +551,7 @@ export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, 
     })
 
     return list
-  }, [activeBookings, facilityFilter, periodFilter, dateFrom, dateTo, statusFilter, searchText, sortAsc])
+  }, [activeBookings, facilityFilter, periodFilter, dateFrom, dateTo, statusFilter, searchText, sortAsc, answeredSet])
 
   // ── サマリー数値（キャンセルを除いた予約が対象） ──────────────────────────
   const todayArrivals = activeBookings.filter(b => isToday(b.checkin_date)).length
@@ -747,6 +752,7 @@ export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, 
             <option value="all">すべてのステータス</option>
             <option value="no_record">名簿未登録</option>
             <option value="no_checkin">チェックイン未</option>
+            <option value="no_survey">アンケート未回答</option>
           </select>
           <ChevronDown size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
         </div>
@@ -776,6 +782,7 @@ export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, 
             <div>ゲスト</div>
             {!cleanerMode && <div className="text-center">名簿</div>}
             {!cleanerMode && <div className="text-center">チェックイン</div>}
+            {!cleanerMode && <div className="text-center">アンケート</div>}
           </div>
 
           {/* 行 */}
@@ -875,6 +882,19 @@ export function BookingDashboard({ bookings, facilities, cleaningStaff, appUrl, 
                         ) : (
                           <StatusBadge ok={false} label="チェックイン" pending />
                         )}
+                      </div>
+                      {/* アンケート（個別URLからの回答のみ判定できる） */}
+                      <div className="flex lg:justify-center">
+                        <span className={`inline-flex items-center gap-1 text-xs font-medium rounded-full px-2 py-0.5 whitespace-nowrap ${
+                          b.surveyed
+                            ? 'text-green-700 bg-green-50 border border-green-200'
+                            : 'text-gray-400 bg-gray-50 border border-gray-200'
+                        }`}>
+                          {b.surveyed
+                            ? <><CheckCircle2 size={10} /> アンケート回答済</>
+                            : <><MessageSquare size={10} /> アンケート未回答</>
+                          }
+                        </span>
                       </div>
                     </div>
                     )}

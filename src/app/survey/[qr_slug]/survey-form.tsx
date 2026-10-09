@@ -97,14 +97,23 @@ function YesNoToggle({ value, onChange }: { value: string; onChange: (v: string)
 
 // ─── メインフォーム ───────────────────────────────────────────────────────
 
+export type SurveyBookingContext = {
+  id: string
+  guestName: string | null
+  checkin: string
+  checkout: string
+}
+
 interface Props {
   qrSlug:          string
   facilityName:    string
   config:          SurveyConfig
   googleReviewUrl?: string
+  /** 個別URL（/survey/b/[BOOKID]）から開いたときの予約情報 */
+  booking?:        SurveyBookingContext
 }
 
-export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
+export function SurveyForm({ qrSlug, config, googleReviewUrl, booking }: Props) {
   const { t, lang } = useGuestLang()
   const [submitted, setSubmitted] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -124,10 +133,10 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
   // ☆5のときに出すクチコミ下書き
   const [draft, setDraft] = useState('')
   const [draftLoading, setDraftLoading] = useState(false)
-  const [name, setName] = useState('')
+  const [name, setName] = useState(booking?.guestName ?? '')
   const [email, setEmail] = useState('')
-  const [stayCheckin, setStayCheckin] = useState('')
-  const [stayCheckout, setStayCheckout] = useState('')
+  const [stayCheckin, setStayCheckin] = useState(booking?.checkin ?? '')
+  const [stayCheckout, setStayCheckout] = useState(booking?.checkout ?? '')
 
   const setAnswer = (key: string, val: number | string) =>
     setAnswers(a => ({ ...a, [key]: val }))
@@ -145,6 +154,7 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         qr_slug:         qrSlug,
+        booking_id:      booking?.id ?? null,
         respondent_name:  name || null,
         respondent_email: email || null,
         stay_checkin:     stayCheckin || null,
@@ -311,7 +321,8 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="p-6 space-y-7">
 
-        {/* 滞在日程（任意） */}
+        {/* 滞在日程（任意）。個別URLから開いた場合は予約の日程を使うので表示しない */}
+        {!booking && (
         <div className="bg-gray-50 rounded-xl p-4 space-y-3">
           <p className="text-xs font-medium text-gray-500">{t('sv_stay_period')}</p>
           <div className="grid grid-cols-2 gap-3">
@@ -321,6 +332,7 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
               value={stayCheckout} onChange={e => setStayCheckout(e.target.value)} />
           </div>
         </div>
+        )}
 
         {/* 星評価 */}
         {ratingKeys.length > 0 && (
@@ -422,12 +434,14 @@ export function SurveyForm({ qrSlug, config, googleReviewUrl }: Props) {
           </div>
         )}
 
-        {/* お名前・メール（任意） */}
+        {/* お名前・メール（任意）。個別URLでは氏名が分かっているのでメールのみ尋ねる */}
         <div className="border-t border-gray-100 pt-5 space-y-3">
           <p className="text-xs text-gray-400">{t('sv_contact_note')}</p>
-          <div className="grid grid-cols-2 gap-3">
-            <Input id="name" label={t('sv_name')} placeholder={t('full_name_ph')}
-              value={name} onChange={e => setName(e.target.value)} />
+          <div className={`grid gap-3 ${booking ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {!booking && (
+              <Input id="name" label={t('sv_name')} placeholder={t('full_name_ph')}
+                value={name} onChange={e => setName(e.target.value)} />
+            )}
             <Input id="email" type="email" label={t('sv_email')} placeholder={t('email_ph')}
               value={email} onChange={e => setEmail(e.target.value)} />
           </div>

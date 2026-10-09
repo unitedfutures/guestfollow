@@ -2,19 +2,8 @@ import { createServiceRoleClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { SurveyForm } from './survey-form'
 import type { SurveyConfig } from './survey-form'
+import { mergeSurveyConfig } from '@/lib/survey/config'
 import { GuestLangProvider, GuestHeader, GuestText } from '@/lib/i18n/guest-lang'
-
-const DEFAULT_SURVEY_CONFIG: SurveyConfig = {
-  standard: {
-    overall:     true,
-    cleanliness: true,
-    facilities:  true,
-    location:    true,
-    revisit:     false,
-    comment:     true,
-  },
-  custom: [],
-}
 
 export default async function SurveyPage({ params }: { params: Promise<{ qr_slug: string }> }) {
   const { qr_slug } = await params
@@ -29,14 +18,7 @@ export default async function SurveyPage({ params }: { params: Promise<{ qr_slug
 
   if (!facility) notFound()
 
-  const config: SurveyConfig = {
-    ...DEFAULT_SURVEY_CONFIG,
-    ...(facility.survey_config as Partial<SurveyConfig> ?? {}),
-    standard: {
-      ...DEFAULT_SURVEY_CONFIG.standard,
-      ...((facility.survey_config as Partial<SurveyConfig>)?.standard ?? {}),
-    },
-  }
+  const config: SurveyConfig = mergeSurveyConfig(facility.survey_config)
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 to-white py-8 px-4">
