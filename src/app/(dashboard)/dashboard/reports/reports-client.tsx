@@ -133,6 +133,8 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
   const totalFee = filtered.reduce((s, b) => s + feeOf(b), 0)
   const totalProfit = totalSales - totalFee
   const count = filtered.length
+  // 人数はキャンセルを除いて数える（売上と同じ扱い）
+  const totalGuests = filtered.reduce((s, b) => s + (b.ota_status === 'cancelled' ? 0 : (b.num_guests || 0)), 0)
 
   // 絞り込み条件の見出し（CSV/PDFの副題に使用）
   const facilityName = facilityFilter === 'all' ? 'すべての施設' : (facilities.find(f => f.id === facilityFilter)?.name ?? '施設')
@@ -171,7 +173,7 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
       b.facilities?.name ?? '',
     ].map(v => `"${String(v).replace(/"/g, '""')}"`))
     // 合計行
-    rows.push(['合計', '', '', '', '', String(count), String(totalSales), String(totalFee), String(totalProfit), '', '']
+    rows.push(['合計', '', '', '', '', String(totalGuests), String(totalSales), String(totalFee), String(totalProfit), '', '']
       .map(v => `"${v}"`))
     const bom = '﻿'
     const csv = bom + [headers.join(','), ...rows.map(r => r.join(','))].join('\n')
@@ -505,7 +507,10 @@ export function ReportsClient({ bookings, facilities }: { bookings: Booking[]; f
 
             {/* 合計フッター */}
             <div className="grid grid-cols-1 lg:grid-cols-[1.1fr_1.3fr_1.2fr_0.5fr_1fr_1fr_1fr] gap-4 px-5 py-3 bg-navy-50 border-t border-navy-200 lg:min-w-[900px] items-center">
-              <span className="text-sm font-semibold text-navy-700 lg:col-span-4">合計（{count}件）</span>
+              <span className="text-sm font-semibold text-navy-700 lg:col-span-3">合計（{count}件）</span>
+              <span className="text-sm font-bold text-navy-700 lg:text-center">
+                <span className="lg:hidden text-xs text-navy-700 mr-1 font-normal">人数:</span>{totalGuests.toLocaleString()}名
+              </span>
               <span className="text-sm font-black text-gray-900 lg:text-right">
                 <span className="lg:hidden text-xs text-navy-700 mr-1 font-normal">売上:</span>{yen(totalSales)}
               </span>

@@ -118,6 +118,8 @@ export async function downloadReportPdf(rows: ReportRow[], meta: ReportMeta): Pr
     fee: rows.reduce((s, r) => s + r.fee, 0),
     profit: rows.reduce((s, r) => s + r.profit, 0),
     count: rows.length,
+    // 人数はキャンセルを除いて数える（売上と同じ扱い）
+    guests: rows.reduce((s, r) => s + (r.cancelled ? 0 : r.guests), 0),
   }
 
   const width = (t: string, size: number) => font.widthOfTextAtSize(t, size)
@@ -180,13 +182,15 @@ export async function downloadReportPdf(rows: ReportRow[], meta: ReportMeta): Pr
     // 集計カード
     const cardY = top - 38 - 12 - 46
     const gap = 9
-    const cardW = (CONTENT_W - gap * 3) / 4
     const cards: { label: string; value: string; valueColor: RGB; fill?: RGB; border?: RGB }[] = [
       { label: '売上（総額）', value: yen(totals.sales), valueColor: ink },
       { label: 'OTA手数料', value: `−${yen(totals.fee)}`, valueColor: amber },
       { label: '粗利益（売上−手数料）', value: yen(totals.profit), valueColor: indigo, fill: softIndigo, border: rgb(0.78, 0.82, 0.98) },
       { label: '件数', value: `${totals.count}件`, valueColor: ink },
+      { label: '人数', value: `${totals.guests.toLocaleString()}名`, valueColor: ink },
     ]
+    // 枚数に合わせて幅を決める（カードを増やしても枠からはみ出さない）
+    const cardW = (CONTENT_W - gap * (cards.length - 1)) / cards.length
     cards.forEach((c, i) => {
       const x = MARGIN + (cardW + gap) * i
       page.drawRectangle({
@@ -285,10 +289,14 @@ export async function downloadReportPdf(rows: ReportRow[], meta: ReportMeta): Pr
   page.drawRectangle({ x: MARGIN, y: y - 7, width: CONTENT_W, height: 18, color: zebra })
   page.drawLine({ start: { x: MARGIN, y: y + 11 }, end: { x: PAGE_W - MARGIN, y: y + 11 }, thickness: 1.5, color: ink })
   draw(page, `合計（${totals.count}件）`, MARGIN + 5, y, { size: FS_ROW, color: ink, bold: true })
+  // 各列の右端（COLS の並びと同じ添字で参照する）
   const rightEdges = COLS.reduce<number[]>((acc, c) => [...acc, (acc[acc.length - 1] ?? MARGIN) + c.w], [])
-  draw(page, yen(totals.sales), rightEdges[4] - 5, y, { size: FS_ROW, color: ink, bold: true, align: 'right' })
-  draw(page, `−${yen(totals.fee)}`, rightEdges[5] - 5, y, { size: FS_ROW, color: amber, bold: true, align: 'right' })
-  draw(page, yen(totals.profit), rightEdges[6] - 5, y, { size: FS_ROW, color: indigo, bold: true, align: 'right' })
+  const guestsCol = COLS[4]
+  draw(page, `${totals.guests.toLocaleString()}名`, rightEdges[4] - guestsCol.w / 2, y,
+    { size: FS_ROW, color: ink, bold: true, align: 'center' })
+  draw(page, yen(totals.sales), rightEdges[5] - 5, y, { size: FS_ROW, color: ink, bold: true, align: 'right' })
+  draw(page, `−${yen(totals.fee)}`, rightEdges[6] - 5, y, { size: FS_ROW, color: amber, bold: true, align: 'right' })
+  draw(page, yen(totals.profit), rightEdges[7] - 5, y, { size: FS_ROW, color: indigo, bold: true, align: 'right' })
   y -= 24
 
   // 注記
