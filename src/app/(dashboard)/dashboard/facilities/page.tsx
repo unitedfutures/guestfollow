@@ -1,4 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
+import { GoogleBusinessConnect } from './google-business-connect'
+import { loadGoogleSettings, googleRedirectUri } from '@/lib/google/credentials'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Building2, Users } from 'lucide-react'
@@ -46,6 +48,9 @@ export default async function FacilitiesPage() {
 
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
 
+  // Googleビジネスプロフィール連携の状態（列が未作成でも落ちないようにする）
+  const googleSettings = user ? await loadGoogleSettings(supabase, user.id).catch(() => null) : null
+
   const allFacilities = [
     ...(ownedFacilities ?? []).map(f => ({ ...f, _isOwner: true, _role: 'owner' })),
     ...(memberFacilities ?? []).map(f => ({ ...f, _isOwner: false })),
@@ -56,13 +61,26 @@ export default async function FacilitiesPage() {
       <div className="flex items-center justify-between mb-8">
         <div>
           <h2 className="text-2xl font-bold text-gray-900">施設管理</h2>
-          <p className="text-gray-500 text-sm mt-1">施設の登録・事前登録URL発行・QRコード・サイトコントローラー連携（Beds24 / Airhost）</p>
+          <p className="text-gray-500 text-sm mt-1">施設の登録・事前登録URL発行・QRコード・サイトコントローラー連携（Beds24 / Airhost）・Googleビジネスプロフィール連携</p>
         </div>
         <div className="flex items-start gap-3">
           <OtaImportButton accounts={otaAccounts ?? []} />
           <FacilityForm />
         </div>
       </div>
+
+      {/* Googleビジネスプロフィール連携（アカウント共通＋施設ごとの紐づけ） */}
+      <GoogleBusinessConnect
+        initialConfigured={!!googleSettings?.clientId && !!googleSettings?.clientSecret}
+        initialConnectedEmail={googleSettings?.refreshToken ? (googleSettings.connectedEmail ?? '連携済み') : null}
+        redirectUri={googleRedirectUri()}
+        facilities={(ownedFacilities ?? []).map(f => ({
+          id: f.id as string,
+          name: f.name as string,
+          googleLocationName: (f as { google_location_name?: string | null }).google_location_name ?? null,
+          googleLocationTitle: (f as { google_location_title?: string | null }).google_location_title ?? null,
+        }))}
+      />
 
       {allFacilities.length > 0 ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

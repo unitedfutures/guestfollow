@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation'
 import {
   Building2, Settings, LogOut, LayoutDashboard, ClipboardList, MessageSquare,
   TrendingUp, Menu, X, ClipboardCheck, Coins, Tag, BarChart3,
-} from 'lucide-react'
+ Star,} from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import { cn } from '@/lib/utils'
 import { Logo } from '@/components/logo'
@@ -19,6 +19,7 @@ const navItems = [
   { href: '/dashboard/pricing', label: '宿泊価格', icon: Tag, exact: false },
   { href: '/dashboard/facilities', label: '施設管理', icon: Building2, exact: false },
   { href: '/dashboard/surveys', label: 'アンケート結果', icon: ClipboardList, exact: false },
+  { href: '/dashboard/reviews', label: 'Googleクチコミ', icon: Star, exact: false },
   { href: '/dashboard/reports', label: '売上レポート', icon: TrendingUp, exact: false },
   { href: '/dashboard/minpaku-report', label: '宿泊実績報告', icon: ClipboardCheck, exact: false },
   { href: '/dashboard/accommodation-tax', label: '宿泊税計算', icon: Coins, exact: false },
