@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { getRoomCalendar, updateRoomCalendar } from '@/lib/beds24/client'
+import { getRoomCalendarWithSlot, updateRoomCalendar } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
 import { canManage } from '@/lib/auth/can-manage'
 
@@ -51,10 +51,17 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { warnings } = await updateRoomCalendar(token, room_id, clean)
+    // 部屋が使っている価格枠（日別料金N）を調べてから書き込む。
+    // 枠が違うとBeds24に "priceN not available" で弾かれるため。
+    const dates = clean.map(d => d.date).sort()
+    const { token: readToken } = await resolveBeds24Token(supabase, user.id, facility, 'read')
+    const priceSlot = readToken
+      ? (await getRoomCalendarWithSlot(readToken, room_id, dates[0], dates[dates.length - 1])).priceSlot
+      : 1
+
+    const { warnings } = await updateRoomCalendar(token, room_id, clean, priceSlot)
 
     // 反映後にBeds24から読み直し、本当に書き込まれたか1日ずつ突き合わせる
-    const dates = clean.map(d => d.date).sort()
     const verification = await verifyApplied(
       supabase, user.id, facility, room_id, clean, dates[0], dates[dates.length - 1]
     )
@@ -62,6 +69,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       updated: clean.length,
+      priceSlot,
       warnings,
       ...verification,
     })
@@ -88,7 +96,7 @@ async function verifyApplied(
   if (!token) return { verified: 0, mismatches: [], verifyError: '確認用の読み取りトークンがありません' }
 
   try {
-    const days = await getRoomCalendar(token, roomId, from, to)
+    const { days } = await getRoomCalendarWithSlot(token, roomId, from, to)
     const actual = new Map(days.map(d => [d.date, d]))
     const mismatches: { date: string; expected: string; actual: string }[] = []
     let verified = 0

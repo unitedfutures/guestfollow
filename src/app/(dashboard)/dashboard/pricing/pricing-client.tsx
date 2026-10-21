@@ -42,6 +42,17 @@ const eachDate = (start: string, end: string) => {
 }
 const fmtDate = (s: string) => s.replace(/-/g, '/')
 
+/** Beds24からの警告を、そのまま出さず分かる言葉にする */
+function explainWarning(message: string): string {
+  if (/price\d+ not available/i.test(message)) {
+    return `この部屋では指定した価格の枠（${message.match(/price(\d+)/i)?.[1] ? `日別料金${message.match(/price(\d+)/i)![1]}` : '日別料金'}）が使えません。`
+  }
+  if (/invalid dates/i.test(message)) {
+    return 'Beds24が受け付けない日付が含まれています（約2年より先の日付は登録できません）。'
+  }
+  return message
+}
+
 export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const [facilityId, setFacilityId] = useState(facilities[0]?.id ?? '')
   const facility = facilities.find(f => f.id === facilityId)
@@ -247,15 +258,16 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
       }
 
       const mismatches = (data.mismatches ?? []) as { date: string; expected: string; actual: string }[]
-      const warnings = (data.warnings ?? []) as string[]
+      // 同じ警告が日数分返ってくるため、重複を除いて1件ずつ表示する
+      const warnings = [...new Set((data.warnings ?? []) as string[])]
       if (mismatches.length > 0) {
         // 送信は通ったが、Beds24側の値が一致しない（＝実際には反映されていない）
         setApplyResult({
           ok: false,
           title: `${data.verified}日分は反映されましたが、${mismatches.length}日分がBeds24に反映されていません`,
           detail: [
-            'Beds24側の値を読み直して確認しました。反映されなかった日は、Beds24の料金設定（日別料金のルールや期間の制限）をご確認ください。',
-            ...warnings,
+            ...warnings.map(explainWarning),
+            'Beds24の「価格 → 日別料金」の設定をご確認ください。',
           ].join(' '),
           mismatches,
         })
@@ -269,10 +281,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
         setApplyResult({
           ok: true,
           title: `Beds24に ${data.updated} 日分を反映しました（${data.verified}日分の反映を確認済み）`,
-          detail: [
-            'OTAへの配信までは数分かかる場合があります。',
-            ...warnings,
-          ].join(' '),
+          detail: ['OTAへの配信までは数分かかる場合があります。', ...warnings.map(explainWarning)].join(' '),
         })
       }
       setDrafts({})

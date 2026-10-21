@@ -207,15 +207,40 @@ export async function getRooms(apiKey: string, propertyId: string): Promise<Beds
 }
 
 /** 部屋の料金カレンダーを取得（日別に正規化） */
+/**
+ * その部屋が実際に使っている価格の枠（日別料金1〜16）を調べる。
+ * Beds24は部屋ごとに使う枠が異なり（例：自社Webだけ運用なら price4）、
+ * 使っていない枠に書き込もうとすると "priceN not available" で弾かれる。
+ */
+export function detectPriceSlot(entries: Record<string, unknown>[]): number {
+  const counts = new Map<number, number>()
+  for (const e of entries) {
+    for (let i = 1; i <= 16; i++) {
+      if (e[`price${i}`] != null) counts.set(i, (counts.get(i) ?? 0) + 1)
+    }
+  }
+  if (counts.size === 0) return 1
+  // 値が入っている枠のうち、最も多く使われているもの
+  return [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0][0]
+}
+
 export async function getRoomCalendar(
   apiKey: string, roomId: string, startDate: string, endDate: string
 ): Promise<CalendarDay[]> {
+  return (await getRoomCalendarWithSlot(apiKey, roomId, startDate, endDate)).days
+}
+
+/** カレンダーと、その部屋が使っている価格枠をまとめて返す */
+export async function getRoomCalendarWithSlot(
+  apiKey: string, roomId: string, startDate: string, endDate: string
+): Promise<{ days: CalendarDay[]; priceSlot: number }> {
   const qs = new URLSearchParams({
     roomId, startDate, endDate,
     includePrices: 'true', includeNumAvail: 'true', includeMinStay: 'true',
   })
   const raw = await beds24Fetch(`/inventory/rooms/calendar?${qs}`, apiKey)
   const entries = ((raw?.data ?? [])[0]?.calendar ?? []) as Record<string, unknown>[]
+  const priceSlot = detectPriceSlot(entries)
   const map = new Map<string, CalendarDay>()
   const dnum = (s: string) => Math.floor(Date.parse(`${s}T00:00:00Z`) / 86400000)
   const dstr = (n: number) => new Date(n * 86400000).toISOString().split('T')[0]
@@ -223,25 +248,28 @@ export async function getRoomCalendar(
     const from = String(e.from ?? e.date ?? '')
     const to = String(e.to ?? e.date ?? from)
     if (!from) continue
-    const price = e.price1 != null ? Number(e.price1) : null
+    const raw価格 = e[`price${priceSlot}`]
+    const price = raw価格 != null ? Number(raw価格) : null
     const minStay = e.minStay != null ? Number(e.minStay) : null
     const numAvail = e.numAvail != null ? Number(e.numAvail) : null
     for (let d = dnum(from); d <= dnum(to); d++) {
       map.set(dstr(d), { date: dstr(d), price, minStay, numAvail })
     }
   }
-  return [...map.values()]
+  return { days: [...map.values()], priceSlot }
 }
 
 /** 料金カレンダーを更新（価格・最低宿泊日数）。書き込みスコープが必要。 */
 export async function updateRoomCalendar(
   token: string,
   roomId: string,
-  days: { date: string; price?: number | null; minStay?: number | null }[]
+  days: { date: string; price?: number | null; minStay?: number | null }[],
+  priceSlot = 1,
 ): Promise<{ warnings: string[] }> {
   const calendar = days.map(d => {
     const entry: Record<string, unknown> = { from: d.date, to: d.date }
-    if (d.price != null) entry.price1 = d.price
+    // 価格は部屋が使っている枠（日別料金N）へ書き込む
+    if (d.price != null) entry[`price${priceSlot}`] = d.price
     if (d.minStay != null) entry.minStay = d.minStay
     return entry
   })
@@ -256,15 +284,16 @@ export async function updateRoomCalendar(
     ((entry[key] as { message?: string }[] | undefined) ?? [])
       .map(w => w?.message).filter((m): m is string => !!m)
 
-  const warnings: string[] = []
+  const warnings = new Set<string>()
   for (const entry of arr) {
-    const detail = [...messages(entry, 'errors'), ...messages(entry, 'warnings')]
+    // 同じ警告が日数分くり返されるため、重複は1件にまとめる
+    const detail = [...new Set([...messages(entry, 'errors'), ...messages(entry, 'warnings')])]
     if (entry.success === false) {
       throw new Error(detail.join(' / ') || String(entry.error ?? 'カレンダーの更新に失敗しました'))
     }
-    warnings.push(...detail)
+    detail.forEach(d => warnings.add(d))
   }
-  return { warnings }
+  return { warnings: [...warnings] }
 }
 
 /**
