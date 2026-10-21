@@ -1,6 +1,6 @@
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { updateRoomCalendar } from '@/lib/beds24/client'
+import { getRoomCalendar, updateRoomCalendar } from '@/lib/beds24/client'
 import { resolveBeds24Token } from '@/lib/ota/token'
 import { canManage } from '@/lib/auth/can-manage'
 
@@ -51,10 +51,63 @@ export async function POST(request: Request) {
   }
 
   try {
-    await updateRoomCalendar(token, room_id, clean)
-    return NextResponse.json({ success: true, updated: clean.length })
+    const { warnings } = await updateRoomCalendar(token, room_id, clean)
+
+    // 反映後にBeds24から読み直し、本当に書き込まれたか1日ずつ突き合わせる
+    const dates = clean.map(d => d.date).sort()
+    const verification = await verifyApplied(
+      supabase, user.id, facility, room_id, clean, dates[0], dates[dates.length - 1]
+    )
+
+    return NextResponse.json({
+      success: true,
+      updated: clean.length,
+      warnings,
+      ...verification,
+    })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
     return NextResponse.json({ error: `Beds24への反映に失敗しました: ${msg}` }, { status: 502 })
+  }
+}
+
+/**
+ * 反映直後にBeds24の値を読み直して、送った内容と一致するか確認する。
+ * 読み取りは Long Life Token（読み取り用）で行う。
+ */
+async function verifyApplied(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  facility: { id: string; ota_account_id?: string | null },
+  roomId: string,
+  sent: DayInput[],
+  from: string,
+  to: string,
+): Promise<{ verified: number; mismatches: { date: string; expected: string; actual: string }[]; verifyError?: string }> {
+  const { token } = await resolveBeds24Token(supabase, userId, facility, 'read')
+  if (!token) return { verified: 0, mismatches: [], verifyError: '確認用の読み取りトークンがありません' }
+
+  try {
+    const days = await getRoomCalendar(token, roomId, from, to)
+    const actual = new Map(days.map(d => [d.date, d]))
+    const mismatches: { date: string; expected: string; actual: string }[] = []
+    let verified = 0
+
+    for (const d of sent) {
+      const got = actual.get(d.date)
+      const priceOk = d.price == null || Math.round(got?.price ?? -1) === Math.round(d.price)
+      const stayOk = d.minStay == null || (got?.minStay ?? -1) === d.minStay
+      if (priceOk && stayOk) { verified++; continue }
+      const fmt = (p: number | null | undefined, m: number | null | undefined) =>
+        `${p != null ? `¥${Math.round(p).toLocaleString()}` : '—'} / ${m != null ? `${m}泊` : '—'}`
+      mismatches.push({
+        date: d.date,
+        expected: fmt(d.price ?? null, d.minStay ?? null),
+        actual: fmt(got?.price ?? null, got?.minStay ?? null),
+      })
+    }
+    return { verified, mismatches }
+  } catch (e) {
+    return { verified: 0, mismatches: [], verifyError: e instanceof Error ? e.message : '確認に失敗しました' }
   }
 }

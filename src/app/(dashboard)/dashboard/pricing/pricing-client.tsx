@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Coins, ChevronDown, Sliders, ChevronLeft, ChevronRight, Wand2, UploadCloud, Save, RefreshCw, Check, AlertTriangle, KeyRound } from 'lucide-react'
+import { Coins, ChevronDown, Sliders, ChevronLeft, ChevronRight, Wand2, UploadCloud, Save, RefreshCw, Check, AlertTriangle, KeyRound, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { isJpHoliday, isPreHoliday } from '@/lib/jp-holidays'
 import { BaseSettingsPanel } from './base-settings-panel'
@@ -70,6 +70,13 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
   const [applying, setApplying] = useState(false)
   const [savingRules, setSavingRules] = useState(false)
   const [msg, setMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
+  // 反映の結果（成功・失敗の詳細をボタンの近くに残す）
+  const [applyResult, setApplyResult] = useState<{
+    ok: boolean
+    title: string
+    detail?: string
+    mismatches?: { date: string; expected: string; actual: string }[]
+  } | null>(null)
   const [showBaseSettings, setShowBaseSettings] = useState(false)
 
   // カレンダー読込（Beds24の現在値）
@@ -225,7 +232,7 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
     const last = pendingDays[pendingDays.length - 1][0]
     if (!confirm(`${fmtDate(first)} 〜 ${fmtDate(last)} のうち ${pendingDays.length}日分の価格・最低宿泊日数をBeds24に反映します。\nこの操作は実際のOTA掲載価格を更新します。よろしいですか？`)) return
 
-    setApplying(true); setMsg(null)
+    setApplying(true); setMsg(null); setApplyResult(null)
     const payload = pendingDays.map(([date, v]) => ({ date, price: v.price, minStay: v.minStay }))
     try {
       const res = await fetch('/api/pricing/apply', {
@@ -234,12 +241,44 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
         body: JSON.stringify({ facility_id: facility.id, room_id: roomId, days: payload }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) { setMsg({ type: 'err', text: data.error ?? '反映に失敗しました' }); return }
-      setMsg({ type: 'ok', text: `Beds24に ${data.updated} 日分を反映しました。反映がOTAに届くまで数分かかる場合があります。` })
+      if (!res.ok) {
+        setApplyResult({ ok: false, title: 'Beds24へ反映できませんでした', detail: data.error ?? '反映に失敗しました' })
+        return
+      }
+
+      const mismatches = (data.mismatches ?? []) as { date: string; expected: string; actual: string }[]
+      const warnings = (data.warnings ?? []) as string[]
+      if (mismatches.length > 0) {
+        // 送信は通ったが、Beds24側の値が一致しない（＝実際には反映されていない）
+        setApplyResult({
+          ok: false,
+          title: `${data.verified}日分は反映されましたが、${mismatches.length}日分がBeds24に反映されていません`,
+          detail: [
+            'Beds24側の値を読み直して確認しました。反映されなかった日は、Beds24の料金設定（日別料金のルールや期間の制限）をご確認ください。',
+            ...warnings,
+          ].join(' '),
+          mismatches,
+        })
+      } else if (data.verifyError) {
+        setApplyResult({
+          ok: true,
+          title: `Beds24に ${data.updated} 日分を送信しました`,
+          detail: `反映後の確認はできませんでした（${data.verifyError}）。Beds24の画面でご確認ください。`,
+        })
+      } else {
+        setApplyResult({
+          ok: true,
+          title: `Beds24に ${data.updated} 日分を反映しました（${data.verified}日分の反映を確認済み）`,
+          detail: [
+            'OTAへの配信までは数分かかる場合があります。',
+            ...warnings,
+          ].join(' '),
+        })
+      }
       setDrafts({})
       loadCalendar(facilityId, roomId, month)
     } catch {
-      setMsg({ type: 'err', text: '通信エラーが発生しました。時間をおいて再度お試しください。' })
+      setApplyResult({ ok: false, title: '通信エラーが発生しました', detail: '時間をおいて再度お試しください。' })
     } finally {
       setApplying(false)
     }
@@ -404,12 +443,60 @@ export function PricingClient({ facilities }: { facilities: Facility[] }) {
           {draftCount > 0 && (
             <span className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">未反映 {draftCount}日分</span>
           )}
-          <Button onClick={applyToBeds24} loading={applying} disabled={!facility?.has_refresh}
-            title={facility?.has_refresh ? '' : 'Refresh Tokenの設定が必要です'} className="!py-2 text-sm">
+          <Button onClick={applyToBeds24} loading={applying} className="!py-2 text-sm">
             <UploadCloud size={14} /> Beds24へ反映
           </Button>
         </div>
       </div>
+
+      {/* 反映の結果（成功・失敗がひと目で分かるように残す） */}
+      {applyResult && (
+        <div className={`rounded-xl border px-4 py-3 ${applyResult.ok ? 'bg-green-50 border-green-200' : 'bg-red-50 border-red-200'}`}>
+          <div className="flex items-start gap-2">
+            {applyResult.ok
+              ? <Check size={16} className="text-green-600 mt-0.5 shrink-0" />
+              : <AlertTriangle size={16} className="text-red-500 mt-0.5 shrink-0" />}
+            <div className="min-w-0 flex-1">
+              <p className={`text-sm font-semibold ${applyResult.ok ? 'text-green-800' : 'text-red-700'}`}>
+                {applyResult.title}
+              </p>
+              {applyResult.detail && (
+                <p className={`text-xs mt-0.5 leading-relaxed ${applyResult.ok ? 'text-green-700' : 'text-red-600'}`}>
+                  {applyResult.detail}
+                </p>
+              )}
+              {applyResult.mismatches && applyResult.mismatches.length > 0 && (
+                <div className="mt-2 bg-white border border-red-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-red-50/60 text-red-700">
+                        <th className="text-left font-semibold px-2 py-1">日付</th>
+                        <th className="text-left font-semibold px-2 py-1">送った値</th>
+                        <th className="text-left font-semibold px-2 py-1">Beds24の値</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-red-100">
+                      {applyResult.mismatches.slice(0, 10).map(m => (
+                        <tr key={m.date}>
+                          <td className="px-2 py-1 text-gray-700 whitespace-nowrap">{fmtDate(m.date)}</td>
+                          <td className="px-2 py-1 text-gray-700">{m.expected}</td>
+                          <td className="px-2 py-1 text-red-600">{m.actual}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {applyResult.mismatches.length > 10 && (
+                    <p className="text-[11px] text-gray-400 px-2 py-1">ほか {applyResult.mismatches.length - 10} 日分</p>
+                  )}
+                </div>
+              )}
+            </div>
+            <button onClick={() => setApplyResult(null)} className="text-gray-400 hover:text-gray-600 shrink-0" aria-label="閉じる">
+              <X size={14} />
+            </button>
+          </div>
+        </div>
+      )}
 
       {msg && (
         <p className={`text-sm rounded-lg px-3 py-2 flex items-start gap-1.5 ${msg.type === 'ok' ? 'text-green-700 bg-green-50 border border-green-200' : 'text-red-600 bg-red-50 border border-red-200'}`}>

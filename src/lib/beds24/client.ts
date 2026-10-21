@@ -238,7 +238,7 @@ export async function updateRoomCalendar(
   token: string,
   roomId: string,
   days: { date: string; price?: number | null; minStay?: number | null }[]
-): Promise<void> {
+): Promise<{ warnings: string[] }> {
   const calendar = days.map(d => {
     const entry: Record<string, unknown> = { from: d.date, to: d.date }
     if (d.price != null) entry.price1 = d.price
@@ -249,11 +249,22 @@ export async function updateRoomCalendar(
     method: 'POST',
     body: JSON.stringify([{ roomId: Number(roomId) || roomId, calendar }]),
   })
-  const arr = Array.isArray(raw) ? raw : (raw?.data ?? [])
-  const first = arr[0]
-  if (first && first.success === false) {
-    throw new Error(first.errors?.[0]?.message ?? first.error ?? 'カレンダーの更新に失敗しました')
+
+  // Beds24は失敗でもHTTP 201を返し、本文の success:false と warnings で知らせてくる
+  const arr = (Array.isArray(raw) ? raw : (raw?.data ?? [])) as Record<string, unknown>[]
+  const messages = (entry: Record<string, unknown>, key: string) =>
+    ((entry[key] as { message?: string }[] | undefined) ?? [])
+      .map(w => w?.message).filter((m): m is string => !!m)
+
+  const warnings: string[] = []
+  for (const entry of arr) {
+    const detail = [...messages(entry, 'errors'), ...messages(entry, 'warnings')]
+    if (entry.success === false) {
+      throw new Error(detail.join(' / ') || String(entry.error ?? 'カレンダーの更新に失敗しました'))
+    }
+    warnings.push(...detail)
   }
+  return { warnings }
 }
 
 /**
